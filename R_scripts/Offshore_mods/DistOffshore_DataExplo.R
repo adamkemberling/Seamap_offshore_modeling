@@ -9,6 +9,7 @@ trawl.info <- read.csv('~/Documents/KrackN/Seamap_man/GSMFC_data/Historic_cleane
 seamap <- read.csv('~/Documents/KrackN/Seamap_man/GSMFC_data/Historic_cleaned/seamap_sapidus_consolidation_2018.csv')
 
 
+# test
 
 #Lets rename things now that we are going to be doing more work besides merging
 names(seamap)

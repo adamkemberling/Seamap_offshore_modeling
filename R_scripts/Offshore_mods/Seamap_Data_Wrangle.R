@@ -146,3 +146,5 @@ tail(all.info)
 write_csv(trawl.info,'~/Documents/KrackN/Seamap_man/GSMFC_data/Historic_cleaned/seamap_trawlinfo.csv' )
 write_csv(seamap_merge, '~/Documents/KrackN/Seamap_man/GSMFC_data/Historic_cleaned/seamap_catchdata.csv')
 write_csv(all.info, '~/Documents/KrackN/Seamap_man/GSMFC_data/Historic_cleaned/seamap_sapidus_consolidation_2018.csv')
+
+#push test
