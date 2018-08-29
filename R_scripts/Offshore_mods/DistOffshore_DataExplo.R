@@ -34,8 +34,8 @@ seamap <- seamap %>% rename(CTD_Depth = DEPTH_EMAX,
 
 
 ###################  Restrict to just 40ft trawls  #############
-seamap <- seamap %>% filter(GEAR_TYPE == "ST",
-                            MESH_SIZE == 1.63) #mesh size for 4oft trawl, the main one
+seamap <- seamap %>% filter(GEAR_TYPE %in% c("ST","FT"),
+                            MESH_SIZE %in% c(1.63,2.00)) #mesh size for 4oft trawl, the main one
 
 seamap$Start_Lat <- as.numeric(as.character(seamap$Start_Lat)); seamap$Start_Long <- as.numeric(as.character(seamap$Start_Long))
 seamap <- seamap[complete.cases(seamap$Start_Long),]
@@ -67,10 +67,9 @@ seamap %>% mutate(Crab_Caught = ifelse(Sapidus_Catch > 0, T, F),
 #################  Get Catch per hectare, 1kt = 1.852km/h  ############
 seamap <- seamap %>%  filter(MIN_FISH < 60) %>%     #remove any super long trawls
   mutate(Spd_kmh = VESSEL_SPD * 1.852,              #convert knots to km/h
-         Area_km = ((MIN_FISH/60) * Spd_kmh) * .012192, #12.192m = 40ft
+         Area_km = ifelse(MESH_SIZE == 1.63, ((MIN_FISH/60) * Spd_kmh) * .012192, ((MIN_FISH/60) * Spd_kmh) * .01981200), #12.192m = 40ft
          Area_Hectares = Area_km * 100,             #1km sq = 100 hectares
          CPUE_towspd = Sapidus_Catch/Area_Hectares) #Crabs/hectare based on two speed and minutes fished
-
 
 #cpue points per year
 plot(seamap$Survey_Year, seamap$CPUE_towspd)
@@ -103,55 +102,50 @@ points(catch_timeline$Survey_Year, catch_timeline$CPUE,ylim=range(c(0, catch_tim
 arrows(catch_timeline$Survey_Year, 0, catch_timeline$Survey_Year, catch_timeline$CPUE+catch_timeline$sd, length=0.05, angle=90, code=3)
 
 
-#### Get Distance Offshore column ############
-# #Full us shapefile if you want to doublecheck the distances from shore
-# us <-  readOGR("L:/Dropbox (The Craboratory)/The Craboratory/Kemberling/GIS/nos80k_coastline/nos80k.shp")
-# plot(us)
-# locator()
-# e1 <- extent(-98.14283, -80.25406, 24.60669, 31.01361)
-# plot(crop(us,e1))
-# project.shapefile <- crop(us,e1)
-
-#either use the gulf crop, or the code above to make sure crabs near the keys have accurate distances from land
-project.shapefile <- gulf
-
-crs(project.shapefile)<-crs(degree.crs) # Set CRS 
-project.shapefile<-spTransform(project.shapefile, crs(meters.crs)) # Convert CRS to meters based
-
 #remove point over texas, and invalid point
-#seamap <-spTransform(seamap, crs(degree.crs)) # transform back to degrees
-#seamap <-  as.data.frame(seamap)
 seamap <- seamap[which(seamap$Start_Long > -97.63193),]
 seamap <- seamap[which(seamap$Start_Long < 0),] #remove coordinate error
 
 
+#######################  calculate distance from shore  ##########################
+# #Full us shapefile if you want to doublecheck the distances from shore
+# #us <-  readOGR("L:/Dropbox (The Craboratory)/The Craboratory/Kemberling/GIS/nos80k_coastline/nos80k.shp")
+# coordinates(seamap)<- ~ Start_Long + Start_Lat # converts the file to a spatialPoints object
+# crs(seamap) <-crs(degree.crs)
+# seamap <-spTransform(seamap, crs(meters.crs)) # transforms to meters
+# crs(project.shapefile);crs(seamap)
+# 
+# seamap$distance_offshore <- rep(NA, nrow(seamap))
+# for(i in 1:nrow(seamap)){
+#   seamap$distance_offshore[i] <- gDistance(seamap[i,], project.shapefile)
+# }
+# 
+# #make it km not meters
+# seamap$distance_offshore <- seamap$distance_offshore/1000
+# hist(seamap$distance_offshore)
+# 
+# #change it back to degrees
+# seamap <-spTransform(seamap, crs(degree.crs)) # transforms to meters
+# plot(gulf); points(seamap, col = 'lightblue')
+# plot(gulf); points(seamap[which(seamap$Year == 2016),], col = 'lightblue')
 
 
-coordinates(seamap)<- ~ Start_Long + Start_Lat # converts the file to a spatialPoints object
-crs(seamap) <-crs(degree.crs)
-seamap <-spTransform(seamap, crs(meters.crs)) # transforms to meters
-crs(project.shapefile);crs(seamap)
 
-plot(project.shapefile);points(seamap, col = 'lightblue')
-
-
-
-
-#calculate distance from shore
-seamap$distance_offshore <- rep(NA, nrow(seamap))
-for(i in 1:nrow(seamap)){
-  seamap$distance_offshore[i] <- gDistance(seamap[i,], project.shapefile)
-}
-
-#make it km not meters
-seamap$distance_offshore <- seamap$distance_offshore/1000
-hist(seamap$distance_offshore)
-
-#change it back to degrees
-seamap <-spTransform(seamap, crs(degree.crs)) # transforms to meters
-plot(gulf); points(seamap, col = 'lightblue')
-plot(gulf); points(seamap[which(seamap$Year == 2016),], col = 'lightblue')
+# Make Hex_Bin Plot
+seamap %>%
+  filter(Sapidus_Catch > 0) %>%
+  ggplot(aes(x = Start_Long, y = Start_Lat)) +
+  coord_quickmap() +  # Define aspect ratio of the map, so it doesn't get stretched when resizing
+  coord_cartesian(xlim = c(-98.08, -79.95),ylim = c(24.8, 31.2)) +
+  geom_polygon(data = map.world_polygon, aes(x = long, y = lat, group = group)) +
+  geom_hex(bins = 600, alpha = 0.75) +
+  scale_fill_distiller(palette = "Spectral") +
+  xlab("Longitude") +
+  ylab("Latitude") +
+  theme_classic() +
+  theme(legend.position = "bottom") + 
+  ggtitle("Location of Blue Crabs Caught From 1982-2017")
 
 
 seamap <- as.data.frame(seamap)
-write.csv(seamap,"L:/Dropbox (The Craboratory)/The Craboratory/Kemberling/SEAMAP_2017/historic_polished/seamap_distances_2018.csv")
+write_csv(seamap,"~/Documents/KrackN/Seamap_man/Historic_cleaned/seamap_cpue_2018.csv")
