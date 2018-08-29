@@ -32,7 +32,7 @@ CRUISES <- CRUISES %>% select(CRUISEID, YR, TITLE, SOURCE)
 
 #Trawl info
 names(STAREC) #Station ID, Cruise ID, MM/DD/YY, Start Lat, Start Lon, End Lat, End Lon, Vessel Speed, start depth, end depth
-STAREC <- STAREC %>% dplyr::select(STATIONID, CRUISEID, MO_DAY_YR, DECSLAT, DECSLON, VESSEL_SPD, DEPTH_SSTA, DEPTH_ESTA)
+STAREC <- STAREC %>% dplyr::select(STATIONID, CRUISEID, MO_DAY_YR, STAT_ZONE, FAUN_ZONE, DECSLAT, DECSLON, DECELAT, DECELON, VESSEL_SPD, DEPTH_SSTA, DEPTH_ESTA)
 
 
 #Tow Time
@@ -69,11 +69,12 @@ table(factor(BGSREC[BGSREC$GENUS_BGS == "CALLINE",]$SPEC_BGS))
 
  
 #create a count column that maintains zero counts for sapidus
-BGSREC$SAP_CNT <- NA
-BGSREC$SAP_CNT <- rep(0,nrow(BGSREC))
+BGSREC$SAP_CNT <- rep(0, nrow(BGSREC))
 for (i in 1:nrow(BGSREC)) {
-  if (BGSREC$SPEC_BGS[i] == "SAPIDU"){BGSREC$SAP_CNT[i] <- BGSREC$CNT[i]}
+  if (BGSREC$SPEC_BGS[i] == "SAPIDU") {BGSREC$SAP_CNT[i] <- BGSREC$CNT[i]}
 }
+
+table(BGSREC$SAP_CNT)
 
 
 #Environmental dataset
@@ -143,8 +144,8 @@ tail(all.info)
 
 
 #save to computer to not need flash drive
-write_csv(trawl.info,'~/Documents/KrackN/Seamap_man/GSMFC_data/Historic_cleaned/seamap_trawlinfo.csv' )
-write_csv(seamap_merge, '~/Documents/KrackN/Seamap_man/GSMFC_data/Historic_cleaned/seamap_catchdata.csv')
-write_csv(all.info, '~/Documents/KrackN/Seamap_man/GSMFC_data/Historic_cleaned/seamap_sapidus_consolidation_2018.csv')
+write_csv(trawl.info,'~/Documents/KrackN/Seamap_man/Historic_cleaned/seamap_trawlinfo.csv' )
+write_csv(seamap_merge, '~/Documents/KrackN/Seamap_man/Historic_cleaned/seamap_catchdata.csv')
+write_csv(all.info, '~/Documents/KrackN/Seamap_man/Historic_cleaned/seamap_sapidus_consolidation_2018.csv')
 
 #push test

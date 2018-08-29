@@ -1,49 +1,47 @@
 #Phase 2 of seamap data wrangle
 #bring in clean data and set it up for analyses, perform analyses
+library(tidyverse)
 
 #raw catch info and trawl info before merge
-catch <- read.csv('~/Documents/KrackN/Seamap_man/GSMFC_data/Historic_cleaned/seamap_catchdata.csv')
-trawl.info <- read.csv('~/Documents/KrackN/Seamap_man/GSMFC_data/Historic_cleaned/seamap_trawlinfo.csv')
+catch <- read_csv('~/Documents/KrackN/Seamap_man/Historic_cleaned/seamap_catchdata.csv')
+trawl.info <- read_csv('~/Documents/KrackN/Seamap_man/Historic_cleaned/seamap_trawlinfo.csv')
 
 #all the data together
-seamap <- read.csv('~/Documents/KrackN/Seamap_man/GSMFC_data/Historic_cleaned/seamap_sapidus_consolidation_2018.csv')
+seamap <- read_csv('~/Documents/KrackN/Seamap_man/Historic_cleaned/seamap_sapidus_consolidation_2018.csv')
 
 
 # test
 
 #Lets rename things now that we are going to be doing more work besides merging
 names(seamap)
-seamap <- seamap[,c("STATIONID","Sapidus_Catch","DEPTH_EMAX","TEMPSURF","TEMPMAX","SALSURF","SALMAX","OXYSURF","OXYMAX",
-                    "CHLORSURF","CHLORMAX","TURBSURF","TURBMAX","WECOLOR","CRUISEID","MO_DAY_YR","DECSLAT",
-                    "DECSLON","DECELAT","DECELON","VESSEL_SPD","DEPTH_SSTA","DEPTH_ESTA","YR","TITLE","SOURCE","GEAR_SIZE",
-                    "GEAR_TYPE","MESH_SIZE","MIN_FISH")]
-colnames(seamap)[which(names(seamap) == "DEPTH_EMAX")] <- 'CTD_Depth'
-colnames(seamap)[which(names(seamap) == "TEMPSURF")] <- 'Temp_S'
-colnames(seamap)[which(names(seamap) == "TEMPMAX")] <- 'Temp_B'
-colnames(seamap)[which(names(seamap) == "SALSURF")] <- 'Salinity_S'
-colnames(seamap)[which(names(seamap) == "SALMAX")] <- 'Salinity_B'
-colnames(seamap)[which(names(seamap) == "OXYSURF")] <- 'DO_S'
-colnames(seamap)[which(names(seamap) == "OXYMAX")] <- 'DO_B'
-colnames(seamap)[which(names(seamap) == "CHLORSURF")] <- 'CHLOR_S'
-colnames(seamap)[which(names(seamap) == "CHLORMAX")] <- 'CHLOR_B'
-colnames(seamap)[which(names(seamap) == "TURBSURF")] <- 'TURB_S'
-colnames(seamap)[which(names(seamap) == "TURBMAX")] <- 'TURB_B'
-colnames(seamap)[which(names(seamap) == "DECSLAT")] <- 'Start_Lat'
-colnames(seamap)[which(names(seamap) == "DECSLON")] <- 'Start_Long'
-colnames(seamap)[which(names(seamap) == "DECELAT")] <- 'End_Lat'
-colnames(seamap)[which(names(seamap) == "DECELON")] <- 'End_Long'
-colnames(seamap)[which(names(seamap) == "DEPTH_SSTA")] <- 'Start_Depth'
-colnames(seamap)[which(names(seamap) == "DEPTH_ESTA")] <- 'End_Depth'
-colnames(seamap)[which(names(seamap) == "YR")] <- 'Year'
-colnames(seamap)[which(names(seamap) == "MO_DAY_YR")] <- 'Date'
-names(seamap)
-seamap$Start_Lat <- as.numeric(as.character(seamap$Start_Lat));seamap$Start_Long <- as.numeric(as.character(seamap$Start_Long))
+seamap <- seamap %>% rename(CTD_Depth = DEPTH_EMAX,
+                  Temp_S = TEMPSURF,
+                  Temp_B = TEMPMAX,
+                  Salinity_S = SALSURF,
+                  Salinity_B = SALMAX,
+                  DO_S = OXYSURF,
+                  DO_B = OXYMAX,
+                  Chlor_S = CHLORSURF,
+                  Chlor_B = CHLORMAX,
+                  Turb_S = TURBSURF,
+                  Turb_B = TURBMAX,
+                  Start_Lat = DECSLAT,
+                  Start_Long = DECSLON,
+                  End_Lat = DECELAT,
+                  End_Long = DECELON,
+                  Start_Depth = DEPTH_SSTA,
+                  End_Depth = DEPTH_ESTA,
+                  Survey_Year = YR,
+                  Date = MO_DAY_YR)
+
+
+seamap$Start_Lat <- as.numeric(as.character(seamap$Start_Lat)); seamap$Start_Long <- as.numeric(as.character(seamap$Start_Long))
 seamap <- seamap[complete.cases(seamap$Start_Long),]
 seamap <- seamap[complete.cases(seamap$Start_Lat),]
-coordinates(seamap) <- ~Start_Long+Start_Lat
+#coordinates(seamap) <- ~Start_Long+Start_Lat
 
 
-gulf <- readOGR("L:/Dropbox (The Craboratory)/The Craboratory/Kemberling/Tagging_calculations/Nos80_gulfcrop.shp") #study area shapefile
+gulf <- readOGR("~/Dropbox (The Craboratory)/The Craboratory/Kemberling/Tagging_calculations/Nos80_gulfcrop.shp") #study area shapefile
 crs(gulf)
 crs(seamap) <- crs(gulf)
 
