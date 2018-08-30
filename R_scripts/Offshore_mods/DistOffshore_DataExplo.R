@@ -35,7 +35,7 @@ seamap <- seamap %>% rename(CTD_Depth = DEPTH_EMAX,
 
 ###################  Restrict to just 40ft trawls  #############
 seamap <- seamap %>% filter(GEAR_TYPE %in% c("ST","FT"),
-                            MESH_SIZE %in% c(1.63,2.00)) #mesh size for 4oft trawl, the main one
+                            GEAR_SIZE %in% c(20,40)) #20 and 40ft.
 
 seamap$Start_Lat <- as.numeric(as.character(seamap$Start_Lat)); seamap$Start_Long <- as.numeric(as.character(seamap$Start_Long))
 seamap <- seamap[complete.cases(seamap$Start_Long),]
@@ -67,7 +67,7 @@ seamap %>% mutate(Crab_Caught = ifelse(Sapidus_Catch > 0, T, F),
 #################  Get Catch per hectare, 1kt = 1.852km/h  ############
 seamap <- seamap %>%  filter(MIN_FISH < 60) %>%     #remove any super long trawls
   mutate(Spd_kmh = VESSEL_SPD * 1.852,              #convert knots to km/h
-         Area_km = ifelse(MESH_SIZE == 1.63, ((MIN_FISH/60) * Spd_kmh) * .012192, ((MIN_FISH/60) * Spd_kmh) * .01981200), #12.192m = 40ft
+         Area_km = ifelse(GEAR_SIZE == 40, ((MIN_FISH/60) * Spd_kmh) * .012192, ((MIN_FISH/60) * Spd_kmh) * 0.006096), #12.192m = 40ft
          Area_Hectares = Area_km * 100,             #1km sq = 100 hectares
          CPUE_towspd = Sapidus_Catch/Area_Hectares) #Crabs/hectare based on two speed and minutes fished
 
@@ -82,8 +82,8 @@ seamap <- seamap[which(!is.na(seamap$CPUE_towspd) == TRUE),]
 #CPUE_towspd yearly average
 library(data.table) # You'll also need to install this package
 DT <- data.table(as.data.frame(seamap))# Convert data.frame to data.table
-catch_timeline <- DT[,mean(CPUE_towspd), by = Survey_Year]
-catch_sd <- DT[,sd(CPUE_towspd), by = Survey_Year]
+catch_timeline <- DT[,mean(CPUE_towspd, na.rm = T), by = Survey_Year]
+catch_sd <- DT[,sd(CPUE_towspd, na.rm = T), by = Survey_Year]
 
 # sort by year
 catch_timeline <- catch_timeline[order(Survey_Year),] 
@@ -92,10 +92,10 @@ catch_timeline <- merge(catch_timeline, catch_sd, by = 'Survey_Year')
 colnames(catch_timeline)[2] <- "CPUE"
 colnames(catch_timeline)[3] <- "sd"
 
-plot(CPUE ~ Survey_Year, data = catch_timeline, type = 'l',ylim=range(c(0, catch_timeline$CPUE+catch_timeline$sd)),
+plot(CPUE ~ Survey_Year, data = catch_timeline, type = 'l',ylim=range(c(0, 10)),
      ylab = 'Mean catch / Hectare', main = 'Seamap C. sapidus sampling')
 
-points(catch_timeline$Survey_Year, catch_timeline$CPUE,ylim=range(c(0, catch_timeline$CPUE+catch_timeline$sd)),
+points(catch_timeline$Survey_Year, catch_timeline$CPUE,
        pch=19, xlab="Year", ylab="Mean CPUE +/- SD",
        main="CPUE and its Overdispersion")
 # hack: we draw arrows but with very special "arrowheads"
@@ -135,7 +135,7 @@ seamap <- seamap[which(seamap$Start_Long < 0),] #remove coordinate error
 seamap %>%
   filter(Sapidus_Catch > 0) %>%
   ggplot(aes(x = Start_Long, y = Start_Lat)) +
-  coord_quickmap() +  # Define aspect ratio of the map, so it doesn't get stretched when resizing
+  #coord_quickmap() +  # Define aspect ratio of the map, so it doesn't get stretched when resizing
   coord_cartesian(xlim = c(-98.08, -79.95),ylim = c(24.8, 31.2)) +
   geom_polygon(data = map.world_polygon, aes(x = long, y = lat, group = group)) +
   geom_hex(bins = 600, alpha = 0.75) +
@@ -144,8 +144,30 @@ seamap %>%
   ylab("Latitude") +
   theme_classic() +
   theme(legend.position = "bottom") + 
-  ggtitle("Location of Blue Crabs Caught From 1982-2017")
+  ggtitle("Frequency that Blue Crabs were Caught at a station From 1982-2017")
 
+
+#make 2d heatmap instead
+seamap %>%
+  filter(Sapidus_Catch > 0) %>%
+  ggplot(aes(x = Start_Long, y = Start_Lat)) +
+  coord_cartesian(xlim = c(-98.08, -79.95),ylim = c(24.8, 31.2)) +
+  geom_polygon(data = map.world_polygon, aes(x = long, y = lat, group = group)) +
+  geom_bin2d(bins = 600, alpha = 0.75) +
+  scale_fill_distiller(palette = "Spectral") +
+  xlab("Longitude") +
+  ylab("Latitude") +
+  theme_classic() +
+  theme(legend.position = "bottom") + 
+  ggtitle("Frequency that Blue Crabs were Caught at a station From 1982-2017")
+
+#timeline
+filter(seamap, Survey_Year > 1983) %>% group_by(Survey_Year) %>% 
+  summarise(CPUE = mean(CPUE_towspd, na.rm = T),
+            sd = sd(CPUE_towspd, na.rm = T)) %>% 
+  ggplot(aes(Survey_Year, CPUE)) +
+  geom_point() + 
+  geom_errorbar(aes(x = Survey_Year, ymin = 0, ymax = CPUE + sd))
 
 seamap <- as.data.frame(seamap)
 write_csv(seamap,"~/Documents/KrackN/Seamap_man/Historic_cleaned/seamap_cpue_2018.csv")
