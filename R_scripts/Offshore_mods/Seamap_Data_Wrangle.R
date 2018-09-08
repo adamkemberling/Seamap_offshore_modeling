@@ -18,16 +18,16 @@ ENVREC <- read_csv("~/Documents/KrackN/Seamap_man/GSMFC_data/ENVREC.csv")
 CRUISES <- read_csv("~/Documents/KrackN/Seamap_man/GSMFC_data/CRUISES.csv") 
 STAREC <- read_csv("~/Documents/KrackN/Seamap_man/GSMFC_data/STAREC.csv")
 INVREC <- read_csv("~/Documents/KrackN/Seamap_man/GSMFC_data/INVREC.csv")
-GLFREC <- read_csv("~/Documents/KrackN/Seamap_man/GSMFC_data/GLFREC.csv")  #GLFREC has SEX of catch
+# GLFREC <- read_csv("~/Documents/KrackN/Seamap_man/GSMFC_data/GLFREC.csv")  #GLFREC has SEX of catch
 
-#Data Cleanup
-names(GLFREC)
-GLFREC <- GLFREC %>% filter(SPEC_GLF == "SAPIDU")
+# #Data Cleanup, GLFREC has weight and length info of individuals
+# names(GLFREC)
+# GLFREC <- GLFREC %>% filter(SPEC_GLF == "SAPIDU")
 
 
 #Cruise/Survey Info
 names(CRUISES) #cruise ID, Year, Survey Title, Data collector
-CRUISES <- CRUISES %>% select(CRUISEID, YR, TITLE, SOURCE)
+CRUISES <- CRUISES %>% dplyr::select(CRUISEID, YR, TITLE, SOURCE)
 
 
 #Trawl info
@@ -69,10 +69,13 @@ table(factor(BGSREC[BGSREC$GENUS_BGS == "CALLINE",]$SPEC_BGS))
 
  
 #create a count column that maintains zero counts for sapidus
-BGSREC$SAP_CNT <- rep(0, nrow(BGSREC))
-for (i in 1:nrow(BGSREC)) {
-  if (BGSREC$SPEC_BGS[i] == "SAPIDU") {BGSREC$SAP_CNT[i] <- BGSREC$CNT[i]}
-}
+# BGSREC$SAP_CNT <- rep(0, nrow(BGSREC))
+# for (i in 1:nrow(BGSREC)) {
+#   if (BGSREC$SPEC_BGS[i] == "SAPIDU") {BGSREC$SAP_CNT[i] <- BGSREC$CNT[i]}
+# }
+
+BGSREC <- BGSREC %>% mutate(SAP_CNT = ifelse(SPEC_BGS == "SAPIDU", CNT, 0))
+
 
 table(BGSREC$SAP_CNT)
 
