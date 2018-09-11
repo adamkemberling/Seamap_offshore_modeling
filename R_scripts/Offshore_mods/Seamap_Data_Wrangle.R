@@ -6,11 +6,13 @@ library(maps)
 library(sp)
 library(mapproj)
 library(raster)
-library(tidyverse)
 library(gstat)
 library(gdistance)
 library(rgdal)
 library(rgeos)
+library(sf)
+library(tidyverse)
+
 
 #Data import, data uploaded from GSMFC February 2018
 BGSREC <- read_csv("~/Documents/KrackN/Seamap_man/GSMFC_data/BGSREC.csv")
@@ -35,7 +37,7 @@ names(STAREC) #Station ID, Cruise ID, MM/DD/YY, Start Lat, Start Lon, End Lat, E
 STAREC <- STAREC %>% dplyr::select(STATIONID, CRUISEID, MO_DAY_YR, STAT_ZONE, FAUN_ZONE, DECSLAT, DECSLON, DECELAT, DECELON, VESSEL_SPD, DEPTH_SSTA, DEPTH_ESTA)
 
 
-#Tow Time
+#Tow time and gear type
 names(INVREC)
 INVREC <- INVREC[,c("STATIONID","GEAR_SIZE","GEAR_TYPE","MESH_SIZE","MIN_FISH")]
 tail(INVREC)
@@ -60,24 +62,17 @@ names(BGSREC) #Station ID, Cruise ID, Genus, Species, Count
 BGSREC <- BGSREC %>% dplyr::select(STATIONID, GENUS_BGS, SPEC_BGS, CNT)
 table(BGSREC$GENUS_BGS)
 
-#subset callinectes to check counts
-callin <- BGSREC[BGSREC$GENUS_BGS == "CALLINE",]
-table(factor(callin$SPEC_BGS))
 
 #checking all similar genus names to callinectes, just replace CALLINE to check other genuses
 table(factor(BGSREC[BGSREC$GENUS_BGS == "CALLINE",]$SPEC_BGS))
 
  
 #create a count column that maintains zero counts for sapidus
-# BGSREC$SAP_CNT <- rep(0, nrow(BGSREC))
-# for (i in 1:nrow(BGSREC)) {
-#   if (BGSREC$SPEC_BGS[i] == "SAPIDU") {BGSREC$SAP_CNT[i] <- BGSREC$CNT[i]}
-# }
+#remove rows with no species name
 
-BGSREC <- BGSREC %>% mutate(SAP_CNT = ifelse(SPEC_BGS == "SAPIDU", CNT, 0))
-
-
-table(BGSREC$SAP_CNT)
+BGSREC <- BGSREC %>% 
+  filter(!is.na(SPEC_BGS)) %>%                             
+  mutate(SAP_CNT = ifelse(SPEC_BGS == "SAPIDU", CNT, 0))
 
 
 #Environmental dataset
@@ -92,10 +87,8 @@ seamap_merge <-  left_join(ENVREC,BGSREC, by = "STATIONID")
 
 
 
-#  getting one row for each station
-#  &
-#  selecting the sapidus rows for stations that have a catch
-
+######  getting one row for each station  #####
+######  selecting the sapidus rows for stations that have a catch  #####
 
 # 1. make a dataframe of just unique station numbers and whatever the blue crab catch was
 catch.fix <- unique(data.frame("STATIONID" = seamap_merge$STATIONID, "COUNT" = seamap_merge$SAP_CNT))
@@ -120,7 +113,7 @@ row.fix <- catch.fix[which(catch.fix$ROW %in% cal$ROW == TRUE),] #rows that have
 keep <- nrow(other.stations) + nrow(row.fix) #double check the numbers to see we aren't leaving data behind
 
 
-#the rows being droppped
+#the rows being dropped
 discard <- nrow(catch.fix[which(catch.fix$STATIONID %in% cal$STATIONID == TRUE & catch.fix$SPEC_BGS != 'SAPIDU'),])#rows that share station id but are other species
 
 #check that the amount of rows added and discarded equal original amount

@@ -2,6 +2,10 @@
 #bring in clean data and set it up for analyses, perform analyses
 library(tidyverse)
 
+
+#losing crabs after 2004 somewhere in here******************
+
+
 #raw catch info and trawl info before merge
 catch <- read_csv('~/Documents/KrackN/Seamap_man/Historic_cleaned/seamap_catchdata.csv')
 trawl.info <- read_csv('~/Documents/KrackN/Seamap_man/Historic_cleaned/seamap_trawlinfo.csv')

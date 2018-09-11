@@ -25,9 +25,6 @@ seamap %>% mutate(STAT_ZONE = factor(STAT_ZONE, levels = c(22:11)),
                   Season = factor(Season, levels = c("Summer","Fall","Winter")))
 
 
-
-
-
 crabs <- filter(seamap, CPUE_towspd > 0) #positive catch subset
 
 # ########### Greta Iris Example  ###########
@@ -70,9 +67,9 @@ seamap2 <- seamap[seamap$Start_Long < -86.16607,]
 seamap.test <- seamap2 %>% filter(Survey_Year %in% 2000:2005) #try one year to start
 
 seamap %>% filter(Sapidus_Catch > 0) %>% ggplot(aes(Start_Depth, CPUE_towspd)) + geom_point() + geom_smooth(method = "lm")
-seamap %>% filter(Sapidus_Catch > 0) %>% ggplot(aes(STAT_ZONE, CPUE_towspd)) + geom_boxplot()
-seamap %>% filter(Sapidus_Catch > 0) %>% ggplot(aes(Survey_Year, CPUE_towspd)) + geom_boxplot()
-seamap %>% filter(Sapidus_Catch > 0) %>% ggplot(aes(Survey_Year, CPUE_towspd)) + geom_point(aes(color = Season)) + geom_smooth(method = "lm", aes(fill = Season))
+seamap %>% filter(Sapidus_Catch > 0) %>% ggplot(aes(STAT_ZONE, CPUE_towspd)) + geom_boxplot(aes(group = STAT_ZONE))
+seamap %>% filter(Sapidus_Catch > 0) %>% ggplot(aes(Survey_Year, CPUE_towspd)) + geom_boxplot(aes(group = Survey_Year))
+seamap %>% filter(Sapidus_Catch > 0) %>% ggplot(aes(Survey_Year, CPUE_towspd, group = Season)) + geom_point(aes(color = Season)) + geom_smooth(method = "lm", aes(colour = Season))
 
 #something is up with the data, not seeing catches past 2004
 
