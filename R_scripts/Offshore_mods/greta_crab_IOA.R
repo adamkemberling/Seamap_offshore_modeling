@@ -9,6 +9,7 @@ library(greta)
 library(DiagrammeR)
 library(bayesplot)
 library(ggplot2)
+library(MASS)
 
 
 #read in data
@@ -19,65 +20,39 @@ seamap[str_detect(seamap$TITLE, "Fall"),"Season"] <- "Fall"
 seamap[str_detect(seamap$TITLE, "Winter"),"Season"] <- "Winter"
 seamap[str_detect(seamap$TITLE, "Summer"),"Season"] <- "Summer"
 
-seamap %>% mutate(STAT_ZONE = factor(STAT_ZONE, levels = c(22:11)),
-                  Crab_presence = ifelse(Sapidus_Catch > 0, 1, 0),
-                  Survey_Year = factor(Survey_Year),
-                  Season = factor(Season, levels = c("Summer","Fall","Winter")))
+seamap <- seamap %>% filter(!is.na(STAT_ZONE), STAT_ZONE != "NA") %>% 
+  mutate(STAT_ZONE = factor(STAT_ZONE, levels = c(22:11)),
+         Crab_presence = ifelse(Sapidus_Catch > 0, 1, 0),
+         Survey_Year = as.numeric(Survey_Year),
+         Season = factor(Season, levels = c("Summer","Fall","Winter")))
 
 
 crabs <- filter(seamap, CPUE_towspd > 0) #positive catch subset
-
-# ########### Greta Iris Example  ###########
-# # data
-# x <- as_data(iris$Petal.Length)
-# y <- as_data(iris$Sepal.Length)
-# 
-# # variables and priors
-# int <- normal(0, 5)
-# coef <- normal(0, 3)
-# sd <- lognormal(0, 3)
-# 
-# # operations
-# mean <- int + coef * x
-# 
-# # likelihood
-# distribution(y) = normal(mean, sd)
-# 
-# # defining the model
-# m <- model(int, coef, sd)
-# 
-# # plotting
-# plot(m)
-# 
-# # sampling
-# draws <- mcmc(m, n_samples = 1000)
-# summary(draws)
-# mcmc_trace(draws)
-# mcmc_intervals(draws)
-# 
-# #different distributions
-# ?greta::distributions
-
 
 
 
 ########  Seamap test model  ############
 #going to look from Destin West
-seamap2 <- seamap[seamap$Start_Long < -86.16607,]
-seamap.test <- seamap2 %>% filter(Survey_Year %in% 2000:2005) #try one year to start
+seamap <- seamap %>% filter(Start_Long < -86.16607)
+
+
+
+#diagnosing crazy high cpue
+seamap <- seamap %>% filter(Spd_kmh != 0)                                                 #these are infinite cpue
+seamap %>% filter(CPUE_towspd > 100) %>% dplyr::select(Sapidus_Catch, MIN_FISH, Spd_kmh)  #these are probably similis, can't make that call objectively
 
 seamap %>% filter(Sapidus_Catch > 0) %>% ggplot(aes(Start_Depth, CPUE_towspd)) + geom_point() + geom_smooth(method = "lm")
 seamap %>% filter(Sapidus_Catch > 0) %>% ggplot(aes(STAT_ZONE, CPUE_towspd)) + geom_boxplot(aes(group = STAT_ZONE))
 seamap %>% filter(Sapidus_Catch > 0) %>% ggplot(aes(Survey_Year, CPUE_towspd)) + geom_boxplot(aes(group = Survey_Year))
 seamap %>% filter(Sapidus_Catch > 0) %>% ggplot(aes(Survey_Year, CPUE_towspd, group = Season)) + geom_point(aes(color = Season)) + geom_smooth(method = "lm", aes(colour = Season))
 
-#something is up with the data, not seeing catches past 2004
+
 
 
 #Model Idea, Regression CPUE ~   Year + Season + Zone
-mod1 <- glm.nb(CPUE_towspd ~ Survey_Year + Season + STAT_ZONE)
-
-
+mod1 <- glm.nb(CPUE_towspd ~ Survey_Year + Season + STAT_ZONE, data = seamap)
+summary(mod1)
+coef(mod1)
 
 
 
@@ -85,7 +60,8 @@ mod1 <- glm.nb(CPUE_towspd ~ Survey_Year + Season + STAT_ZONE)
 
 ############## sample model matrices, and jags.dat prep ######
 #need seperate matrices of covariates, one for binary portion and another for count portion
-Xc <- model.matrix( ~ 1 + Start_Depth, data = seamap.test)
+seamap.test <- seamap %>% filter(Survey_Year == 2000) #try one year to start
+Xc <- model.matrix( ~ 1 + Survey_Year + Season + STAT_ZONE, data = seamap.test)
 Kc    <- ncol(Xc)
 I0    <- as.numeric(seamap.test$Crab_presence)
 re1    <- as.numeric(as.factor(seamap.test$Survey_Year))

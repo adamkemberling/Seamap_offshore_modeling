@@ -2,10 +2,6 @@
 #bring in clean data and set it up for analyses, perform analyses
 library(tidyverse)
 
-
-#losing crabs after 2004 somewhere in here******************
-
-
 #raw catch info and trawl info before merge
 catch <- read_csv('~/Documents/KrackN/Seamap_man/Historic_cleaned/seamap_catchdata.csv')
 trawl.info <- read_csv('~/Documents/KrackN/Seamap_man/Historic_cleaned/seamap_trawlinfo.csv')
@@ -41,13 +37,15 @@ seamap <- seamap %>% rename(CTD_Depth = DEPTH_EMAX,
 seamap <- seamap %>% filter(GEAR_TYPE %in% c("ST","FT"),
                             GEAR_SIZE %in% c(20,40)) #20 and 40ft.
 
+#still have 2017
+
 seamap$Start_Lat <- as.numeric(as.character(seamap$Start_Lat)); seamap$Start_Long <- as.numeric(as.character(seamap$Start_Long))
 seamap <- seamap[complete.cases(seamap$Start_Long),]
 seamap <- seamap[complete.cases(seamap$Start_Lat),]
 
 #coordinate references
-degree.crs <- crs("+proj=longlat +ellps=WGS84 +datum=WGS84") #Degree coordinate reference syster WGS 1984
-meters.crs <- crs("+proj=eqc +lat_ts=0 +lat_0=0 +lon_0=0 +x_0=0 +y_0=0 +a=6371007 +b=6371007 +units=m +no_defs")
+#degree.crs <- crs("+proj=longlat +ellps=WGS84 +datum=WGS84") #Degree coordinate reference system WGS 1984
+#meters.crs <- crs("+proj=eqc +lat_ts=0 +lat_0=0 +lon_0=0 +x_0=0 +y_0=0 +a=6371007 +b=6371007 +units=m +no_defs")
 
 ###################  ggplot map polygons  #############
 map.world_polygon <- map_data("world")
