@@ -171,5 +171,21 @@ filter(seamap, Survey_Year > 1983) %>% group_by(Survey_Year) %>%
   geom_point() + 
   geom_errorbar(aes(x = Survey_Year, ymin = 0, ymax = CPUE + sd))
 
+
+# Make Hex_Bin Plot by year
+seamap %>%
+  filter(Sapidus_Catch > 0, Survey_Year %in% 2000:2005) %>%
+  ggplot(aes(x = Start_Long, y = Start_Lat)) +
+  #coord_quickmap() +  # Define aspect ratio of the map, so it doesn't get stretched when resizing
+  coord_cartesian(xlim = c(-98.08, -79.95),ylim = c(24.8, 31.2)) +
+  geom_polygon(data = map.world_polygon, aes(x = long, y = lat, group = group)) +
+  geom_hex(bins = 600, alpha = 0.75) +
+  scale_fill_distiller(palette = "Spectral") + 
+  facet_wrap(~Survey_Year) +
+  xlab("Longitude") +
+  ylab("Latitude") +
+  theme_classic() +
+  theme(legend.position = "bottom") 
+
 seamap <- as.data.frame(seamap)
 write_csv(seamap,"~/Documents/KrackN/Seamap_man/Historic_cleaned/seamap_cpue_2018.csv")
