@@ -1,0 +1,10 @@
+---
+output: github_document
+---
+
+# SEAMAP GOM offshore analysis - Repo Outline
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
