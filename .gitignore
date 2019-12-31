@@ -2,3 +2,10 @@
 .Rhistory
 .RData
 .Ruserdata
+.gitignore
+2019_edits/data/
+2019_edits/docs/
+2019_edits/.gitignore
+2019_edits/.Rdata
+2018_data_cleanup/GSMFC_data_2018/
+2018_data_cleanup/Historic_cleaned/

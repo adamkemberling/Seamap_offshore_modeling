@@ -1,0 +1,1255 @@
+---
+title: "Offshore Indices of Abundance for <br/> Blue Crabs"
+author: "Adam A Kemberling"
+date: "2/19/2019"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    mathjax: null
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+#packages
+library(MASS)
+library(here)
+library(tidyverse)
+library(knitr)
+library(emmeans)
+library(gridExtra)
+library(broom)
+library(statmod)
+library(rnaturalearth)
+library(sf)
+conflicted::conflict_prefer("select", "dplyr")
+conflicted::conflict_prefer("filter", "dplyr")
+
+
+#Format ggplot for rest of document
+theme_set(theme_bw() + theme(panel.grid.major = element_blank(), 
+                             panel.grid.minor = element_blank(), 
+                             panel.border = element_rect(fill = NA)))
+
+`%not in%` <- purrr::negate(`%in%`)
+```
+
+# Data Used in this report
+
+**Large-scale filtering**
+
+Data used to create these indices were taken from the [GSMFC website](seamap.gsmfc.com) in March of 2019. Data was then limited to 40 ft trawls, and any tows with no operation codes (indicating a bad station) or an op code of "W" (water tow, aka no catch but otherwise fine). Data was also limited to summer and fall groundfish cruises specifically. Stations with no Stat zone or tow speed records were also removed.
+
+A survey design change ocurred in 2008 between the summer and fall groundfish surveys. This change expanded the area sampling into Florida waters, an area previously unsampled, and changed from a dapth stratified sampling design where multiple tows longer than 30min were common. The new (current) sampling design covers the entire Gulf from Brownsville TX to the Florida Keyes, and each station consists of a single 30 minute tow. 
+
+It was recommended to me by the analyst group at the Pascagoula Laboratory to use groundfish data from 2010* forward for consistency as the design change was not uniformly applied until then, with some state partners sampling differently.
+
+
+# Additional filters from data exploration
+
+Based on exploration of the data, and in the interest of looking at Gulfwide or atleast East/West trends several additional filters were added. Data was limited to years after 2009 for consistency in the sampling methods and for a Gulfwide coverage. Additionally statzones 0 (not a real zone), 1 (The Keyes), 12 (MS Sound, inside Chandy), and 22 (Brownsville/MX) were not included due to a lack of observations. Stat zones 6 & 9 were also excluded from the model, as they have no observed *C. sapidus* catch for the timeseries and thus have no expected catch.
+
+There was an initial concern with abnormally high catch values being potential mis-identifications. This is less of a concern with the reduced time-series
+
+
+```{r}
+# Read in data
+#seamap <- read_csv(here("data_processed/gsmfc_processed", "seamap_cpue_2019.csv"),
+seamap <- read_csv(here("data/offshore", "seamap_cpue_2019.csv"),
+                   guess_max = 1e6, 
+                   col_types = cols())
+
+#Set up Season Column, using survey titles
+seamap[str_detect(seamap$TITLE, "Fall"),"Season"] <- "Fall"
+seamap[str_detect(seamap$TITLE, "Winter"),"Season"] <- "Winter"
+seamap[str_detect(seamap$TITLE, "Summer"),"Season"] <- "Summer"
+seamap[str_detect(seamap$TITLE, "Spring"),"Season"] <- "Spring"
+
+# Make any setup changes
+seamap <- seamap %>% 
+  mutate(STAT_ZONE     = factor(STAT_ZONE),
+         Crab_presence = ifelse(Sapidus_Catch > 0, 1, 0),
+         Survey_Year   = as.numeric(Survey_Year),
+         Season        = factor(Season, levels = c("Summer","Fall","Winter")),
+         Survey_Month  = lubridate::month(Date),
+         Survey_Month  = factor(Survey_Month),
+         Survey_design = ifelse(Survey_Year < 2009, "Original", "Updated"),
+         Survey_design = ifelse(Survey_Year == 2008 & Season == "Fall", "Updated", Survey_design),
+         Survey_design = factor(Survey_design, levels = c("Original", "Updated")),
+         ####  More changes from DE
+         Year_f             =  factor(Survey_Year),
+         Month_f            =  factor(Survey_Month),
+         Depth              =  (Start_Depth + End_Depth)/2,
+         Temp_std           =  (Temp_B- mean(Temp_B))/ mean(Temp_B),
+         Salinity_std       =  (Salinity_B- mean(Salinity_B))/ mean(Salinity_B),
+         Depth_std          =  (Depth- mean(Depth))/ mean(Depth))
+
+
+# Do all filtering
+seamap <- seamap %>% 
+  filter(#is.na(STAT_ZONE)  ==  FALSE, 
+         #STAT_ZONE         !=  "NA",
+         Season            !=  "Winter",
+         Survey_Year     %in%  c(2009:2018),
+         #STAT_ZONE   %not in%  c(0, 1, 22, 12),      #Not enough Obs
+         #STAT_ZONE   %not in%  c(6,9),
+         Spd_kmh           !=  0,                    #these are infinite cpue
+         Depth             <=  110
+         )
+
+
+# Should we remove catch outliers?
+seamap %>% 
+  mutate(`Outlier Status` = ifelse(Sapidus_Catch > 80, "Large Outlier", "Plausible Catch"),
+         `Outlier Status` = ifelse(Sapidus_Catch <= 25, "No Concern", `Outlier Status`),
+         `Outlier Status` = factor(`Outlier Status`, levels = c("No Concern", "Plausible Catch", "Large Outlier"))) %>% 
+  ggplot() + 
+    geom_point(aes(x = Year_f, y = Sapidus_Catch, color = `Outlier Status`)) +
+    scale_color_manual(values = c("gray", "orange", "darkred")) +
+    theme(axis.text.x = element_text(angle = 45, vjust = 0.5)) +
+    xlab("") + ylab("C. sapidus Catch")
+
+
+#Look at catch only
+crabs <- seamap %>% filter(Sapidus_Catch > 0)
+
+crabs %>% 
+  filter(Survey_Year >= 2009) %>% 
+  mutate(STAT_ZONE = fct_rev(STAT_ZONE)) %>% 
+  ggplot(aes(STAT_ZONE, Sapidus_Catch)) + 
+  geom_boxplot(aes(group = STAT_ZONE)) + 
+  labs(title    = "Blue Crab Catch by Stat Zone", 
+       subtitle = "Stat zones ordered West to East - 2010 to 2018", 
+       x        = "Statistical Zone",
+       y        = "C. sapidus Single Station Catch")
+
+
+overall_mean <- mean(seamap$Sapidus_Catch, na.rm = T)
+percent_zeros <- seamap %>% filter(Sapidus_Catch == 0) %>% count()
+station_count <- seamap %>% count()
+```
+
+# Data Set Summary
+
+ * Total Number of Stations = `r nrow(seamap)`     
+ 
+ * Starting in `r min(as.numeric(as.character(seamap$Survey_Year)))` and continuing through `r max(as.numeric(as.character(seamap$Survey_Year)))`     
+ 
+ * Total Sapidus Caught was `r sum(seamap$Sapidus_Catch, na.rm = T)`     
+ 
+ * Overall Frequency of Occurrence was `r mean(seamap$Crab_presence, na.rm = TRUE) * 100`     
+ 
+ 
+
+# Factor Summaries
+
+## Yearly Summaries {.tabset .tabset-fade .tabset-pills}
+
+**Overall Mean Catch: `r overall_mean`**
+**Stations with no catch: `r percent_zeros` / `r station_count` or `r (percent_zeros / station_count) * 100`**
+
+```{r}
+year_sums <- seamap %>% 
+  group_by(Survey_Year) %>% 
+  summarise(Stations          = n(),
+            `Missing Obs`     = sum(is.na(Sapidus_Catch)),
+            `Mean Catch`      = mean(Sapidus_Catch, na.rm = T),
+            `SD`              = sd(Sapidus_Catch, na.rm = T),
+            `Var`             = var(Sapidus_Catch),
+            `Overdispersed`   = ifelse(Var > `Mean Catch`, "yes", "no"),
+            `Catch SE`        = sd(Sapidus_Catch, na.rm = T) / sqrt(Stations - `Missing Obs`),
+            `% Occurrence`    = mean(Crab_presence, na.rm = T),
+            `% Occurrence SE` = sd(Crab_presence, na.rm = T) / sqrt(Stations - `Missing Obs`)) %>% 
+  ungroup() %>% 
+    mutate(Survey_Year        = factor(Survey_Year),
+           catch_ymin         = `Mean Catch` - (2 * `Catch SE`),
+           catch_ymax         = `Mean Catch` + (2 * `Catch SE`),
+           catch_ymin         = ifelse(catch_ymin < 0, 0, catch_ymin),
+           occurrence_ymin    = `% Occurrence` - (2 * `% Occurrence SE`),
+           occurrence_ymax    = `% Occurrence` + (2 * `% Occurrence SE`),
+           occurrence_ymin    = ifelse(occurrence_ymin < 0, 0, occurrence_ymin)
+         )
+
+
+year_sums %>% select(Survey_Year, Stations, `Missing Obs`, `% Occurrence`, `Mean Catch`, SD, `Overdispersed`) %>% knitr::kable()
+#knitr::kable(year_sums)
+```
+
+***
+
+### Yearly Catch Plot
+
+
+```{r}
+
+year_plot_1 <- year_sums %>% 
+  ggplot() +
+    geom_col(aes(Survey_Year, `Mean Catch`)) +
+    geom_errorbar(aes(x = Survey_Year, 
+                      ymin = catch_ymin,
+                      ymax = catch_ymax),
+                  size = .25) +
+  labs(x = "Survey Year",
+       y = "Mean Catch (C. sapidus / 30 min. tow)") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5))
+
+
+year_plot_1
+#ggsave(plot =  year_plot_1, here("figures", "yearly_catch.png"), dpi = 600)
+
+```
+
+***
+
+### Yearly Frequency of Occurrence
+
+```{r}
+
+year_plot_2 <- year_sums %>% 
+  ggplot() +
+    geom_col(aes(Survey_Year, `% Occurrence`)) +
+    geom_errorbar(aes(x = Survey_Year, 
+                      ymin = occurrence_ymin,
+                      ymax = occurrence_ymax),
+                  size = .25) +
+  scale_y_continuous(labels = scales::percent, limits = c(0,1)) + 
+  labs(x = "Survey Year",
+       y = "Percent Occurrence") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5))
+
+year_plot_2
+#ggsave(plot = year_plot_2, here("figures", "yearly_occurrence.png"), dpi = 600)
+
+```
+
+***
+
+
+### Yearly Side-by
+
+```{r}
+gridExtra::grid.arrange(
+  grobs = list(year_plot_1, year_plot_2),
+  nrow = 1)
+```
+
+
+***
+
+## Stat Zone Summaries {.tabset .tabset-fade .tabset-pills}
+
+
+```{r}
+#Assign Stat Zone from NMFS grid
+#szones <- read_sf(here("GIS_objects",  "NMFS_Fishing_Grids_GOM_2013", "NMFS_Fishing_Grids_GOM_2013.shp"), crs = 4326)
+szones <- read_sf(here("data/gis_files","NMFS_Fishing_Grids_GOM_2013.shp"), crs = 4326)
+
+# Add a better StatZone ID by spatial overlap
+seamap <- seamap %>% 
+  st_as_sf(coords = c("Start_Long", "Start_Lat"), crs = 4326, remove = FALSE) %>% 
+  st_join(szones["StatZone"]) %>% 
+  st_set_geometry(NULL) %>% 
+  as.data.frame() %>% 
+  dplyr::select(-STAT_ZONE) %>%  #Remove default/incorrect one
+  mutate(StatZone = factor(StatZone))
+
+
+
+szone_summary <- seamap %>% 
+  filter(is.na(StatZone)      == FALSE) %>% 
+  group_by(StatZone) %>% 
+  summarise(Stations          = n(),
+            `Missing Obs`     = sum(is.na(Sapidus_Catch)),
+            `Mean Catch`      = mean(Sapidus_Catch, na.rm = T),
+            `SD`              = sd(Sapidus_Catch, na.rm = T),
+            `Var`             = var(Sapidus_Catch),
+            `Overdispersed`   = ifelse(Var > `Mean Catch`, "yes", "no"),
+            `Catch SE`        = sd(Sapidus_Catch, na.rm = T) / sqrt(Stations - `Missing Obs`),
+            `% Occurrence`    = mean(Crab_presence, na.rm = T),
+            `% Occurrence SE` = sd(Crab_presence, na.rm = T) / sqrt(Stations - `Missing Obs`)) %>% 
+    ungroup() %>% 
+    mutate(StatZone           = factor(StatZone),
+           StatZone           = fct_rev(StatZone),
+           catch_ymin         = `Mean Catch` - (2 * `Catch SE`),
+           catch_ymax         = `Mean Catch` + (2 * `Catch SE`),
+           catch_ymin         = ifelse(catch_ymin < 0, 0, catch_ymin),
+           occurrence_ymin    = `% Occurrence` - (2 * `% Occurrence SE`),
+           occurrence_ymax    = `% Occurrence` + (2 * `% Occurrence SE`),
+           occurrence_ymin    = ifelse(occurrence_ymin < 0, 0, occurrence_ymin)
+         )
+
+szone_summary %>% select(StatZone, Stations, `Missing Obs`, `% Occurrence`, `Mean Catch`, SD, Overdispersed) %>% knitr::kable()
+#knitr::kable(szone_summary)
+```
+
+***
+
+### Stat Zone Catch Plot
+
+```{r}
+
+szones_plot_1 <- szone_summary %>% 
+  ggplot() +
+    geom_col(aes(StatZone, `Mean Catch`)) +
+    geom_errorbar(aes(x = StatZone, 
+                      ymin = catch_ymin,
+                      ymax = catch_ymax),
+                  size = .25) +
+  geom_vline(xintercept = 11.5, color = "gray", lty = 2) +
+  geom_vline(xintercept = 4.5, color = "gray", lty = 2) +
+  #annotate(geom = "text", x = 7, y = 2.0, label = "LA + MS") +
+  #annotate(geom = "text", x = 16, y = 2.0, label = "East of Mobile Bay") +
+  annotate(geom = "text", x = 16.5, y = -0.1, label = "East of Mobile Bay") +
+  annotate(geom = "text", x = 8, y = -0.1, label = "LA & MS") +
+  annotate(geom = "text", x = 2.5, y = -0.1, label = "Texas") +
+    labs(x= "Statistical Zone",
+         y = "Mean Catch (C. sapidus / 30 min. tow)")
+
+
+szones_plot_1 
+#ggsave(plot = szones_plot_1, here("figures", "statzones_catch.png"), dpi = 600)
+
+```
+
+***
+
+### Stat Zone Frequency of Occurrence
+
+```{r}
+
+szones_plot_2 <- szone_summary %>% 
+  ggplot() +
+    geom_col(aes(StatZone, `% Occurrence`)) +
+    geom_errorbar(aes(x = StatZone, 
+                      ymin = occurrence_ymin,
+                      ymax = occurrence_ymax),
+                  size = .25) +
+  geom_vline(xintercept = 11.5, color = "gray", lty = 2) +
+  geom_vline(xintercept = 4.5, color = "gray", lty = 2) +
+  annotate(geom = "text", x = 16.5, y = 0.75, label = "East of Mobile Bay") +
+  annotate(geom = "text", x = 8, y = 0.75, label = "LA & MS") +
+  annotate(geom = "text", x = 2.5, y = 0.75, label = "Texas") +
+  scale_y_continuous(labels = scales::percent, limits = c(0,1)) + 
+  labs(x = "Statistical Zone",
+       y = "Percent Occurrence")
+
+szones_plot_2
+#ggsave(plot = szones_plot_2, here("figures", "statzones_occurrence.png"), dpi = 600)
+```
+
+
+***
+
+
+### Stat Zone Side-by
+
+```{r}
+gridExtra::grid.arrange(
+  grobs = list(szones_plot_1, szones_plot_2),
+  nrow = 1)
+```
+
+
+***
+
+
+## Region Summary {.tabset .tabset-fade .tabset-pills}
+
+
+```{r}
+seamap <- seamap %>% 
+  mutate(
+    # region = ifelse(Start_Lat < 28.387595 & Start_Long < -96, "South Texas", "TX/LA"),
+    #      region = ifelse(Start_Long > -89.2, "MS Bight", region),
+    #      region = ifelse(Start_Long > -87.5, "FL", region),
+    #      region = factor(region)
+    region = ifelse(StatZone %in% seq("21", "18"), "Texas", "Louisiana"),
+    region = ifelse(StatZone %in% seq("12", "10"), "MS Bight", region),
+    region = ifelse(StatZone %in% seq("1", "9"), "Florida", region),
+    region = factor(region, levels = c("Texas", "Louisiana", "MS Bight", "Florida"))
+    )
+
+#Output seamap analysis file
+write_csv(seamap, here::here("data/offshore", "seamap_cpue_2019_analysis.csv"), 
+          col_names = TRUE)
+
+region_summary <- seamap %>% 
+  filter(is.na(region)      == FALSE) %>% 
+  group_by(region) %>% 
+  summarise(Stations          = n(),
+            `Missing Obs`     = sum(is.na(Sapidus_Catch)),
+            `Mean Catch`      = mean(Sapidus_Catch, na.rm = T),
+            `SD`              = sd(Sapidus_Catch, na.rm = T),
+            `Var`             = var(Sapidus_Catch),
+            `Overdispersed`   = ifelse(Var > `Mean Catch`, "yes", "no"),
+            `Catch SE`        = sd(Sapidus_Catch, na.rm = T) / sqrt(Stations - `Missing Obs`),
+            `% Occurrence`    = mean(Crab_presence, na.rm = T),
+            `% Occurrence SE` = sd(Crab_presence, na.rm = T) / sqrt(Stations - `Missing Obs`)) %>% 
+    ungroup() %>% 
+    mutate(region             = factor(region, 
+                                       levels = c("Texas", "Louisiana", "MS Bight", "Florida")),
+           #region             = fct_rev(region),
+           catch_ymin         = `Mean Catch` - (2 * `Catch SE`),
+           catch_ymax         = `Mean Catch` + (2 * `Catch SE`),
+           catch_ymin         = ifelse(catch_ymin < 0, 0, catch_ymin),
+           occurrence_ymin    = `% Occurrence` - (2 * `% Occurrence SE`),
+           occurrence_ymax    = `% Occurrence` + (2 * `% Occurrence SE`),
+           occurrence_ymin    = ifelse(occurrence_ymin < 0, 0, occurrence_ymin)
+    )
+
+region_summary %>% select(region, Stations, `Missing Obs`, `% Occurrence`, `Mean Catch`, SD, Overdispersed) %>% knitr::kable()
+#knitr::kable(region_summary)
+```
+
+***
+
+### Regional Catch Plot
+
+
+```{r}
+
+region_plot_1 <- region_summary %>% 
+  ggplot() +
+    geom_col(aes(region, `Mean Catch`)) +
+    geom_errorbar(aes(x = region, 
+                      ymin = catch_ymin,
+                      ymax = catch_ymax),
+                  size = .25) +
+    labs(x= "Sampling Region",
+         y = "Mean Catch (C. sapidus / 30 min. tow)")
+
+
+region_plot_1 
+#ggsave(plot = region_plot_1, here("figures", "regions_catch.png"), dpi = 600)
+```
+
+***
+
+### Regional Frequency of Occurrence
+
+```{r}
+
+region_plot_2 <- region_summary %>% 
+  ggplot() +
+    geom_col(aes(region, `% Occurrence`)) +
+    geom_errorbar(aes(x = region, 
+                      ymin = occurrence_ymin,
+                      ymax = occurrence_ymax),
+                  size = .25) +
+  # geom_vline(xintercept = 11.5, color = "gray", lty = 2) +
+  # geom_vline(xintercept = 4.5, color = "gray", lty = 2) +
+  # annotate(geom = "text", x = 16.5, y = 0.75, label = "East of Mobile Bay") +
+  # annotate(geom = "text", x = 8, y = 0.75, label = "LA & MS") +
+  # annotate(geom = "text", x = 2.5, y = 0.75, label = "Texas") +
+  scale_y_continuous(labels = scales::percent, limits = c(0,1)) + 
+  labs(x = "Sampling Region",
+       y = "Percent Occurrence")
+
+region_plot_2
+#ggsave(plot = region_plot_2, here("figures", "regions_occurrence.png"), dpi = 600)
+
+```
+
+***
+
+### Regional Side-by
+
+```{r}
+gridExtra::grid.arrange(
+  grobs = list(region_plot_1, region_plot_2),
+  nrow = 1)
+```
+
+
+***
+
+
+## Region - Season {.tabset .tabset-fade .tabset-pills}
+
+```{r}
+rs_summary <- seamap %>% 
+  filter(is.na(region)      == FALSE) %>% 
+  group_by(region, Season) %>% 
+  summarise(Stations          = n(),
+            `Missing Obs`     = sum(is.na(Sapidus_Catch)),
+            `Mean Catch`      = mean(Sapidus_Catch, na.rm = T),
+            `SD`              = sd(Sapidus_Catch, na.rm = T),
+            `Var`             = var(Sapidus_Catch),
+            `Overdispersed`   = ifelse(Var > `Mean Catch`, "yes", "no"),
+            `Catch SE`        = sd(Sapidus_Catch, na.rm = T) / sqrt(Stations - `Missing Obs`),
+            `% Occurrence`    = mean(Crab_presence, na.rm = T),
+            `% Occurrence SE` = sd(Crab_presence, na.rm = T) / sqrt(Stations - `Missing Obs`)) %>% 
+    ungroup() %>% 
+    mutate(Season             = factor(Season, levels = c("Summer", "Fall")),
+           region             = factor(region, 
+                                       levels = c("Texas", "Louisiana", "MS Bight", "Florida")),
+           #region             = fct_rev(region),
+           catch_ymin         = `Mean Catch` - (2 * `Catch SE`),
+           catch_ymax         = `Mean Catch` + (2 * `Catch SE`),
+           catch_ymin         = ifelse(catch_ymin < 0, 0, catch_ymin),
+           occurrence_ymin    = `% Occurrence` - (2 * `% Occurrence SE`),
+           occurrence_ymax    = `% Occurrence` + (2 * `% Occurrence SE`),
+           occurrence_ymin    = ifelse(occurrence_ymin < 0, 0, occurrence_ymin)
+    )
+
+rs_summary %>% select(region, Season, Stations, `Missing Obs`, `% Occurrence`, `Mean Catch`, SD, Overdispersed) %>% knitr::kable()
+```
+
+
+***
+
+### Region - Season Catch
+
+```{r}
+rs_plot_1 <- rs_summary %>% 
+  ggplot(aes(region, `Mean Catch`, fill = Season)) +
+    geom_col(position = "dodge") +
+    geom_errorbar(aes(ymin = catch_ymin,
+                      ymax = catch_ymax),
+                  position = "dodge",
+                  size = .25) +
+  scale_fill_manual(name = "", values = setNames(c("gray35", "gray50"), c("Summer", "Fall"))) +
+  labs(x = "Survey Year",
+       y = "Mean Catch (C. sapidus / 30 min. tow)") + theme(
+    legend.position = c(1, .95),
+    legend.justification = c("right", "top"),
+    legend.box.just = "right",
+    legend.margin = margin(0, 6, 2, 2),
+    legend.background = element_rect(fill = NA),
+    axis.text.x = element_text(angle = 45, vjust = 0.5)
+    )
+
+
+rs_plot_1 
+```
+
+
+***
+
+### Region - Season FOO
+
+```{r}
+
+rs_plot_2 <- rs_summary %>% 
+  ggplot(aes(region, `% Occurrence`, fill = Season)) +
+    geom_col(position = "dodge") +
+    geom_errorbar(aes(ymin = occurrence_ymin,
+                      ymax = occurrence_ymax),
+                  position = "dodge",
+                  size = .25) +
+  scale_fill_manual(name = "", values = setNames(c("gray35", "gray50"), c("Summer", "Fall"))) +
+  scale_y_continuous(labels = scales::percent, limits = c(0,1)) + 
+  labs(x = "Survey Year",
+       y = "Percent Occurrence") + theme(
+    legend.position = c(1, .95),
+    legend.justification = c("right", "top"),
+    legend.box.just = "right",
+    legend.margin = margin(0, 6, 2, 2),
+    legend.background = element_rect(fill = NA),
+    axis.text.x = element_text(angle = 45, vjust = 0.5)
+    )
+
+rs_plot_2
+
+```
+
+
+***
+
+### Region - Season Side-by
+
+
+```{r}
+
+gridExtra::grid.arrange(
+  grobs = list(rs_plot_1 + theme(legend.position = "none"), rs_plot_2),
+  nrow = 1)
+
+```
+
+***
+
+
+## Seasonal Summary {.tabset .tabset-fade .tabset-pills}
+
+
+
+```{r}
+
+season_summary <- seamap %>% 
+  group_by(Survey_Year, Season) %>% 
+  summarise(Stations          = n(),
+            `Missing Obs`     = sum(is.na(Sapidus_Catch)),
+            `Mean Catch`      = mean(Sapidus_Catch, na.rm = T),
+            `SD`              = sd(Sapidus_Catch, na.rm = T),
+            `Var`             = var(Sapidus_Catch),
+            `Overdispersed`   = ifelse(Var > `Mean Catch`, "yes", "no"),
+            `Catch SE`        = sd(Sapidus_Catch, na.rm = T) / sqrt(Stations - `Missing Obs`),
+            `% Occurrence`    = mean(Crab_presence, na.rm = T),
+            `% Occurrence SE` = sd(Crab_presence, na.rm = T) / sqrt(Stations - `Missing Obs`)) %>% 
+    ungroup() %>% 
+    mutate(Survey_Year        = factor(Survey_Year),
+           # StatZone         = factor(StatZone),
+           # StatZone         = fct_rev(StatZone),
+           catch_ymin         = `Mean Catch` - (2 * `Catch SE`),
+           catch_ymax         = `Mean Catch` + (2 * `Catch SE`),
+           catch_ymin         = ifelse(catch_ymin < 0, 0, catch_ymin),
+           occurrence_ymin    = `% Occurrence` - (2 * `% Occurrence SE`),
+           occurrence_ymax    = `% Occurrence` + (2 * `% Occurrence SE`),
+           occurrence_ymin    = ifelse(occurrence_ymin < 0, 0, occurrence_ymin)
+         )
+
+season_summary%>% select(Survey_Year, Season, Stations, `Missing Obs`, `% Occurrence`, `Mean Catch`, SD, Overdispersed) %>% knitr::kable()
+#knitr::kable(season_summary)
+```
+
+***
+
+### Seasonal Catch Plot
+
+```{r}
+
+season_plot_1 <- season_summary %>% 
+  ggplot(aes(Survey_Year, `Mean Catch`, fill = Season)) +
+    geom_col(position = "dodge") +
+    geom_errorbar(aes(ymin = catch_ymin,
+                      ymax = catch_ymax),
+                  position = "dodge",
+                  size = .25) +
+  scale_fill_manual(name = "", values = setNames(c("gray35", "gray50"), c("Summer", "Fall"))) +
+  labs(x = "Survey Year",
+       y = "Mean Catch (C. sapidus / 30 min. tow)") + theme(
+    legend.position = c(1, .95),
+    legend.justification = c("right", "top"),
+    legend.box.just = "right",
+    legend.margin = margin(0, 6, 2, 2),
+    legend.background = element_rect(fill = NA),
+    axis.text.x = element_text(angle = 45, vjust = 0.5)
+    )
+
+
+season_plot_1 
+#ggsave(plot =  year_plot_1, here("figures", "yearly_catch.png"), dpi = 600)
+
+
+```
+
+***
+
+### Seasonal Frequency of Occurrence
+
+```{r}
+
+season_plot_2 <- season_summary %>% 
+  ggplot(aes(Survey_Year, `% Occurrence`, fill = Season)) +
+    geom_col(position = "dodge") +
+    geom_errorbar(aes(ymin = occurrence_ymin,
+                      ymax = occurrence_ymax),
+                  position = "dodge",
+                  size = .25) +
+  scale_fill_manual(name = "", values = setNames(c("gray35", "gray50"), c("Summer", "Fall"))) +
+  scale_y_continuous(labels = scales::percent, limits = c(0,1)) + 
+  labs(x = "Survey Year",
+       y = "Percent Occurrence") + theme(
+    legend.position = c(1, .95),
+    legend.justification = c("right", "top"),
+    legend.box.just = "right",
+    legend.margin = margin(0, 6, 2, 2),
+    legend.background = element_rect(fill = NA),
+    axis.text.x = element_text(angle = 45, vjust = 0.5)
+    )
+
+season_plot_2
+
+
+
+```
+
+***
+
+### Seasonal Side-by
+
+```{r}
+gridExtra::grid.arrange(
+  grobs = list(season_plot_1 + theme(legend.position = "none"), season_plot_2),
+  nrow = 1)
+```
+
+
+***
+
+## Combining Figures {.tabset .tabset-fade .tabset-pills}
+
+### 1x2
+
+```{r, message = FALSE, warning = FALSE, comment = NA}
+year_plots <- grid.arrange(grobs = list(year_plot_1 + xlab(""), year_plot_2), nrow = 2, ncol = 1)
+year_plots
+season_plots <- grid.arrange(grobs = list(season_plot_1 + xlab(""), season_plot_2), nrows = 2, ncol = 1)
+season_plots
+szone_plots <- grid.arrange(grobs = list(szones_plot_1 + xlab(""), szones_plot_2), nrows = 2, ncol = 1)
+szone_plots
+
+```
+
+
+### 3x2 A.
+
+
+```{r, message = FALSE, warning = FALSE, comment = NA, fig.height=8}
+super_plot_tall <- grid.arrange(
+  grobs = list(year_plot_1, year_plot_2+ ylab(""),
+               season_plot_1, season_plot_2+ ylab(""),
+               szones_plot_1, szones_plot_2+ ylab("")), 
+  nrow = 3)
+super_plot_tall
+```
+
+### 3x2 B.
+
+```{r, message = FALSE, warning = FALSE, comment = NA, fig.height=8}
+
+super_plot_wide <- grid.arrange(
+  grobs = list(year_plot_1 + xlab(""), season_plot_1 + xlab("") + ylab(""), szones_plot_1 + xlab("") + ylab(""),
+               year_plot_2,            season_plot_2 + ylab(""), szones_plot_2 + ylab("")),
+  nrow = 2
+)
+
+super_plot_wide
+```
+
+# Index of Abundance
+
+## Negative Binomial IOA {.tabset .tabset-fade .tabset-pills}
+
+A negative binomial generalized linear model was used to estimate an index of abundance for the time series. The factors considered in the model were Year, Season, and Stat Zone.
+
+
+
+
+
+### Model Selection
+
+**Method :** Move from the simplest model of catch and year to the most complex with year, season, statzone, depth, temp, and salinity.
+
+```{r}
+#don't want empty statzones here if we are using them in model
+seamap_sz <- seamap %>% filter(StatZone %not in% c(0,1,6,9,12,22)) #Don't need this if we use region
+
+
+#simple -> complex models
+#mod1 <- glm.nb(Sapidus_Catch ~ Year_f, data = seamap)
+#mod2 <- glm.nb(Sapidus_Catch ~ Year_f + Season, data = seamap)
+mod3 <- glm.nb(Sapidus_Catch ~ Year_f + Season + StatZone, data = seamap_sz)
+#mod3 <- glm.nb(Sapidus_Catch ~ Year_f + Season + region, data = seamap)
+#mod4 <- glm.nb(Sapidus_Catch ~ Year_f + Season + STAT_ZONE + Depth_std, data = seamap)
+#mod4 <- glm.nb(Sapidus_Catch ~ Year_f + Season + STAT_ZONE + Depth_std, data = seamap)
+#mod5 <- glm.nb(Sapidus_Catch ~ Year_f + Season + STAT_ZONE + Depth_std + Salinity_std, data = seamap)
+#mod6 <- glm.nb(Sapidus_Catch ~ Year_f + Season + STAT_ZONE + Depth_std + Salinity_std + Temp_std, data = seamap)
+# mod7 <- glm.nb(Sapidus_Catch ~ Year_f + Season + Survey_design + STAT_ZONE + Depth_std + Salinity_std + Temp_std, data = seamap)
+
+# model_list <- list("year" = mod1, 
+#                    "year + season" = mod2, 
+#                    "year + season + statzone" = mod3, 
+#                    "year + season + statzone + depth" = mod4, 
+#                    "year + season + statzone + depth + salinity" = mod5, 
+#                    "year + season + statzone + depth + salinity + temp" = mod6)
+# map(model_list, AIC)
+```
+
+
+**Most parsimonious model (AIC) : **
+
+year + season + stat zone
+
+OR
+
+year + season + region
+
+
+### significant predictors:
+```{r}
+#salinity and temp significant, but are they
+best_mod <- mod3
+
+#Inserting the offset model here
+#best_mod <- glm.nb(Sapidus_Catch ~ Year_f + Season + StatZone + offset(log(MIN_FISH)), data = seamap_sz)
+
+tidy(best_mod) %>% kable()
+
+#glance(best_mod) %>% kable()
+```
+
+### qqplot
+
+I've seen worse, obviously not perfect though.
+
+```{r}
+
+
+#qqplot for model fit of best model (AIC)
+t1 <- qres.nbinom(best_mod)
+qqnorm(t1)
+abline(0, 1, col = "red")
+
+```
+
+
+## Predicting abundance indices (Statzone - mod) {.tabset .tabset-fade .tabset-pills}
+
+Generate the data for a timeline using estimated marginal means. Then plot that timeline with Confidence interval.
+
+```{r}
+#Predicted abundance dataframe
+best_mod.dat <- emmeans(best_mod, 
+                        specs = "Year_f" , 
+                        by = "Year_f", 
+                        type = "response") %>% 
+  as.data.frame()
+
+
+mean_pred <- mean(best_mod.dat$response)
+best_mod.dat <- best_mod.dat %>% mutate(Std_Index = response/mean_pred,
+                                CV = SE/response,
+                                LCI = asymp.LCL/mean_pred,
+                                UCI = asymp.UCL/mean_pred,
+                                Year_n = as.numeric(as.character(Year_f)))
+
+#make scale_x_discrete breaks b/c ggplot is dumb
+ystart <- min(as.numeric(seamap$Survey_Year))
+yend <- max(as.numeric(seamap$Survey_Year))
+ynames <- lubridate::year(seq.Date(as.Date(paste(ystart), "%Y"), 
+                   as.Date(paste(yend), "%Y"), 
+                   by = "year"))
+
+
+
+#ggplot of standardized index of abundance
+p <- best_mod.dat %>% ggplot(aes(Year_n, Std_Index)) +
+      geom_ribbon(aes(Year_n, ymin = LCI, ymax = UCI), fill = "gray80") +
+      geom_line(aes(Year_n, Std_Index, group = 1)) +
+      geom_point(aes(Year_n, Std_Index)) +
+      geom_hline(aes(yintercept = 1), color = "darkred", linetype = 2) +
+      scale_x_discrete(limits = c(as.numeric(ystart:yend)), labels = ynames) +
+      xlab("") + ylab("Scaled Index Value") +
+      theme(axis.text.x=element_text(angle=45, hjust = 1, vjust=1), legend.position = "bottom")
+p
+```
+
+### Observed vs. Predicted
+
+Model prediction (black) & observed mean values (blue), both standardized by overall mean
+
+```{r}
+#Observed data
+mean_obs <- mean(seamap$Sapidus_Catch)
+obs_timeline <- seamap %>% 
+  group_by(Survey_Year) %>% 
+  summarise(Nobs = n(),
+            PercentPos = mean(Crab_presence),
+            Mean_Catch = mean(Sapidus_Catch)) %>% 
+  mutate(Index_Obs = Mean_Catch/mean_obs)
+ 
+
+#Plot again with observed data set on top in blue 
+p + geom_line(data = obs_timeline, 
+              aes(Survey_Year, Index_Obs, group = 1), 
+              col = "royalblue", linetype = 2) +
+    geom_point(data = obs_timeline, 
+               aes(Survey_Year, Index_Obs), col = "royalblue") +
+  labs(title = "Model Estimates and Yearly observed means")
+```
+
+
+
+### Compare to state catch
+
+State landings data taken from GEDAR assesment and covers years 2000-2011. The values were divided by the overall mean for the timeseries for each state then plotted. They aren't weighted according to which State catches more so this plot isn't great.
+
+Pretty noisy, and gives you a sense that either the landings reflect the population poorly, or that the population is resilient to some.
+
+```{r}
+#Compare to GEDAR01 data, raw catch
+gedar <- tibble(Year_f         = c(2000:2011),
+                Texas          = c(1.19, 1.72, 1.82, 2.08, 1.90, 1.05, 1.05, 2.27, 1.88, 1.61, 1.65, 1.22),
+                Louisiana      = c(2.48, 1.53, 2.63, 1.61, 1.95, 3.95, 8.37, 3.78, 2.41, 3.90, 2.77, 3.73),
+                Mississippi    = c(1.70, 2.70, 1.19, 1.07, 1.13, 0.70, 1.37, 1.42, 0.44, 1.28, 2.49, 0.47),
+                Alabama        = c(3.95, 4.83, 3.96, 7.73, 8.45, 1.99, 3.62, 1.61, 1.54, 2.12, 5.43, 4.41),
+                `Western Gulf` = c(1.98, 1.97, 2.43, 2.33, 2.44, 2.29, 4.21, 3.01, 2.25, 2.75, 2.44, 2.48))
+
+#Standardize by each state's mean and reformat
+gedar_std <- gedar %>% 
+  mutate(Texas = Texas/ mean(Texas),
+         Louisiana = Louisiana / mean(Louisiana),
+         Mississippi = Mississippi / mean(Mississippi),
+         Alabama = Alabama / mean(Alabama),
+         `Western Gulf` = `Western Gulf` / mean(`Western Gulf`)) %>% 
+  gather(Texas:`Western Gulf`, key = "State", value = Std_index)
+
+
+ystart <- 2000
+yend <- max(as.numeric(seamap$Survey_Year))
+ynames <- lubridate::year(seq.Date(as.Date(paste(ystart), "%Y"), 
+                   as.Date(paste(yend), "%Y"), 
+                   by = "year"))
+
+#look at individual state trends
+p <- best_mod.dat %>% ggplot(aes(Year_n, Std_Index)) +
+      geom_ribbon(aes(Year_n, ymin = LCI, ymax = UCI), fill = "gray80") +
+      geom_line(aes(Year_n, Std_Index, group = 1)) +
+      geom_point(aes(Year_n, Std_Index)) +
+      geom_hline(aes(yintercept = 1), color = "darkred", linetype = 2) +
+      scale_x_discrete(limits = c(as.numeric(ystart:yend)), labels = ynames) +
+      xlab("") + ylab("Scaled Index Value") +
+      theme(axis.text.x=element_text(angle=45, hjust = 1, vjust=1), legend.position = "bottom")
+
+p + geom_line(data = gedar_std, aes(Year_f, Std_index, color = State)) +
+    geom_point(data = gedar_std, aes(Year_f, Std_index, color = State))
+
+```
+
+
+
+
+
+### Looking at the other factors
+
+```{r}
+#Breakdown by Year season and statzone
+factor_brkdwn <- emmeans(best_mod, 
+                         specs = "Year_f", by = c("Year_f", "Season", "StatZone"), 
+                         type = "response") %>% as.data.frame()
+
+factor_brkdwn %>% ggplot(aes(fct_rev(StatZone), response, fill = Season)) +
+  #geom_line(aes(group = STAT_ZONE)) +
+  #geom_point() +
+  geom_col(position = "dodge")+
+  facet_wrap(~Year_f) +
+  xlab("Stat Zone - West -> East") + ylab("Mean Predicted Catch") +
+  guides(fill = guide_legend(title = "Season",
+                              title.position = "top", title.hjust = 0.5)) +
+  theme(#axis.text.x=element_text(angle=45, hjust = 1, vjust=1), 
+        legend.position = "bottom")
+  
+  
+```
+
+Statzones start counting at 1 (FL Keyes) and continue through brownsville Texas (22), 12 is around the Chandeleurs, and 13 is Terrebonne Bay and the MS Birdfoot.
+
+
+
+## NB GLM - Year + Season + Region FINAL
+
+**Update 10/3/2019**
+
+Need To account for catch rates not being discrete with either an offset or with weights
+ 
+ Formula for using an offset:
+ 
+ 
+ $$Log(Catch)_{y,s,r}\ \sim  \lambda + \lambda^{Year}_{y} + \lambda^{Season}_{s} +\ \lambda^{Region}_{r} + Log(Towtime)$$
+
+
+Link to Reference:
+https://stats.stackexchange.com/questions/66791/where-does-the-offset-go-in-poisson-negative-binomial-regression/66878#66878
+
+Link to formula for GLM
+https://newonlinecourses.science.psu.edu/stat504/node/216/
+
+Use emmeans on year + season + region
+
+```{r}
+
+#nbmod <- glm.nb(Sapidus_Catch ~ Year_f + Season + region, data = seamap)
+
+#Add effort offset
+nbmod <- glm.nb(Sapidus_Catch ~ Year_f + Season + region + offset(log(MIN_FISH)), data = seamap)
+
+
+#qqplot for model fit
+t1 <- qres.nbinom(nbmod)
+qqnorm(t1)
+abline(0, 1, col = "red")
+
+
+tidy(nbmod) %>% kable()
+
+```
+
+
+### Table of emmeans
+
+```{r}
+nbmod_est <- emmeans(nbmod, specs = c("Year_f", "Season", "region"), type = "response") %>% as.data.frame()
+
+nbmod_est %>% kable()
+
+#Make your own plots to compare to the raw means
+
+
+```
+
+### Full Term Plot
+
+```{r}
+nbmod_est %>% mutate(
+  Year = as.numeric(as.character(Year_f))
+) -> nbmod_est
+
+ggplot(nbmod_est) +
+  geom_ribbon(aes(Year, ymin = asymp.LCL, ymax = asymp.UCL, fill = Season), alpha = 0.2) +
+  geom_line(aes(x = Year, y = response, color = Season, linetype = Season)) +
+  geom_line(aes(x = Year, y = asymp.LCL, color = Season), linetype = 2) +
+  geom_line(aes(x = Year, y = asymp.UCL, color = Season), linetype = 2) +
+  facet_wrap(~ region) +
+  scale_color_manual(values = c("Summer" = "black", "Fall" = "black")) +   #
+  scale_fill_manual(values = c("Summer" = "gray50", "Fall" = "gray30")) +
+  scale_x_discrete(limits = c(2009:2018),
+                   labels = c(2009:2018)) +
+  labs(
+    y = "Estimated Crabs per Tow",
+    x = "Survey Year"
+  ) + 
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5),
+        legend.position = c(1, .4),
+        legend.justification = c("right", "top"),
+        legend.box.just = "right",
+        legend.margin = margin(0, 6, 2, 2),
+        legend.background = element_rect(fill = NA)
+    )
+
+#Pointrange Plot
+ggplot(nbmod_est) +
+  geom_pointrange(aes(x = Year, 
+                      y = response, 
+                      ymin = asymp.LCL, 
+                      ymax = asymp.UCL, 
+                      shape = Season,
+                      color = Season), alpha = 0.8) +
+  geom_errorbar(aes(x = Year,
+                    ymin = asymp.LCL,
+                    ymax = asymp.UCL,
+                    color = Season), 
+                alpha = 0.8, width = 0.2, show.legend = FALSE) +
+  geom_line(aes(x = Year, y = response, color = Season), linetype = 3, alpha = 0.4) +
+  geom_line(aes(x = Year, y = response, color = Season), linetype = 3) +
+  facet_wrap(~ region) +
+  scale_color_manual(values = c("Summer" = "black", "Fall" = "gray40")) +
+  scale_x_discrete(limits = c(2009:2018),
+                   labels = c(2009:2018)) +
+  labs(
+    y = "Estimated Crabs per Tow",
+    x = "Survey Year"
+  ) + 
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5),
+        legend.position = c(1, .4),
+        legend.justification = c("right", "top"),
+        legend.box.just = "right",
+        legend.margin = margin(0, 6, 2, 2),
+        legend.background = element_rect(fill = NA))
+```
+
+
+
+
+
+
+### Interaction plot Year & Season
+```{r}
+emmeans::emmip(nbmod, formula = Season ~ Year_f, type = "response")
+```
+
+### Interaction Plot Year & Region
+
+```{r}
+emmeans::emmip(nbmod, formula = region ~ Year_f, type = "response")
+
+```
+
+### Interaction Plot Season & Region
+
+```{r}
+emmeans::emmip(nbmod, formula = Season ~ region, type = "response")
+
+```
+
+
+
+
+
+
+# Effort Mapping {.tabset .tabset-fade .tabset-pills}
+
+These maps are made using only the model data so years 2010-2018 and only the stat zones with enough samples and some catch. The gaps around Pensacola and Tampa are those areas I took out because there was no catch and they made the models confidence intervals absurd.
+
+
+## Stations w/ Stat Zone Numbers
+
+```{r}
+#pull model coef
+mod_coef <- tidy(best_mod)
+
+sz_coef <- mod_coef %>% 
+  filter(str_detect(term, "StatZone")) %>%         #Take only the STAT_ZONE rows
+  mutate(term = `str_sub<-`(term, 1,8, value = "")) %>%  #Strip out the text
+  #mutate(term = str_sub(term, 1,9, value = "")) %>%  #Strip out the text
+  rename(SZ = term)
+
+sz_df <- tribble(
+  
+~"SZ", ~"long",  ~"lat",
+21,    -97,     26.5,
+20,    -96.75,  27.5,
+19,    -95.75,  28.25,
+18,    -94.5,   28.8,
+17,    -93.5,   28.9,
+16,    -92.5,   28.85,
+15,    -91.5,   28.8,
+14,    -90.5,   28.75,
+13,    -89.75,  28.9,
+12,    -89.25,  29.65,
+11,    -88.5,   29.75,
+10,    -87.5,   29.80,
+ 8,    -85.5,   29.35,
+ 7,    -84.5,   29.25,
+ 5,    -83.5,   27.55,
+ 4,    -83.35,   26.75,
+ 3,    -83.25,   25.75,
+
+) %>% 
+  mutate(SZ = as.character(SZ))
+
+sz_df <- right_join(sz_df, sz_coef, by = "SZ")
+
+#pull us map
+#usa_map <- map_data("usa")
+
+#rnaturalearth coastlines
+usmap <- ne_states(country = "united states of america") %>% 
+  st_as_sf() %>% 
+  filter(region == "South")
+
+mex <- ne_states(country = "mexico") %>% 
+  st_as_sf()
+
+
+
+ggplot() +
+  geom_point(data = seamap, aes(Start_Long, Start_Lat, color = StatZone), alpha = 0.3, show.legend = FALSE) + 
+  
+  #geom_polygon(data = usa_map, aes(long, lat, group = group)) +
+  # coord_cartesian(xlim = c(-97.2, -82),
+  #                 ylim = c(25.75, 32)) +
+  geom_sf(data = usmap, fill = "antiquewhite1") + 
+  geom_sf(data = mex, fill = "antiquewhite1") +
+  coord_sf(xlim = c(-80.5, -97.5), ylim = c(24.75, 31)) +
+  geom_text(data = sz_df, aes(long, lat, label = SZ)) +
+  xlab("") + ylab("") +
+  theme_minimal() 
+  
+
+pos_dat <- seamap %>% filter(Sapidus_Catch > 0)
+```
+
+
+```{r}
+#Catch grid
+# catch.plot <- ggplot() +
+#   xlab("") + ylab("") +
+#   geom_bin2d(data = pos_dat, aes(Start_Long, Start_Lat), bins = 100)  +
+#   scale_fill_gradient("Total Catch", low = "Yellow", high = "red") +
+#   coord_cartesian(xlim = c(-97.2, -82),
+#                   ylim = c(25.75, 32)) +
+#   geom_polygon(data = usa_map, aes(long, lat, group = group)) +
+#   #geom_text(data = sz_df, aes(long, lat, label = SZ), color = "black") +
+#   guides(fill = guide_colorbar(title = "Total Catch",
+#                              title.position = "top",
+#                              title.hjust = 0.5)) +
+#   ggtitle("Catch Map") +
+#   theme(legend.position = "bottom")
+
+catch.plot <- ggplot() +
+  xlab("") + ylab("") +
+  geom_bin2d(data = pos_dat, aes(Start_Long, Start_Lat))  +
+  scale_fill_gradient("Total Catch", low = "Yellow", high = "red") +
+  geom_sf(data = usmap, fill = "antiquewhite1") + 
+  geom_sf(data = mex, fill = "antiquewhite1") +
+  coord_sf(xlim = c(-80.5, -97.5), ylim = c(24.75, 31)) +
+  #geom_text(data = sz_df, aes(long, lat, label = SZ), color = "black") +
+  guides(fill = guide_colorbar(title = "Total Catch",
+                             title.position = "top",
+                             title.hjust = 0.5)) +
+  ggtitle("Total Catch of C. sapidus") +
+  theme_minimal() + theme(legend.position = "bottom")
+
+
+#station Map
+# station.plot <- ggplot() +
+#   xlab("") + ylab("") +
+#   geom_bin2d(data = seamap, aes(Start_Long, Start_Lat), bins = 100)  +
+#   scale_fill_gradient("# of Stations", low = "lightblue", high = "blue") +
+#   coord_cartesian(xlim = c(-97.2, -82),
+#                   ylim = c(25.75, 32)) +
+#   geom_polygon(data = usa_map, aes(long, lat, group = group)) +
+#   #geom_text(data = sz_df, aes(long, lat, label = SZ), color = "black") +
+#   guides(fill = guide_colorbar(title = "Number of Stations",
+#                              title.position = "top",
+#                              title.hjust = 0.5)) +
+#   ggtitle("Station Map") +
+#   theme(legend.position = "bottom")
+
+
+station.plot <- ggplot() +
+  xlab("") + ylab("") +
+  geom_bin2d(data = seamap, aes(Start_Long, Start_Lat))  +
+  scale_fill_gradient("# of Stations", low = "lightblue", high = "blue") +
+  geom_sf(data = usmap, fill = "antiquewhite1") + 
+  geom_sf(data = mex, fill = "antiquewhite1") +
+  coord_sf(xlim = c(-80.5, -97.5), ylim = c(24.75, 31)) +
+  guides(fill = guide_colorbar(title = "Number of Stations",
+                             title.position = "top",
+                             title.hjust = 0.5)) +
+  ggtitle("Number of Stations") +
+  theme_minimal() + theme(legend.position = "bottom")
+
+
+#grid.arrange(station.plot, catch.plot, ncol = 2)
+
+
+```
+
+## Effort Heatmap
+
+```{r}
+station.plot
+```
+
+
+## Catch Heatmap
+
+```{r}
+catch.plot
+```
+
+
+
+
+
+# Comments
+
+I have polygons for the stat zones and was thinking I would make a map with those polygons shaded by predicted catch or with the mean catch visible within them. That file is too big for my laptop to process though so I couldn't add it here. There's really three big things with the data.
+
+ 1. years are fairly variable with little consistency or things I would consider long-term trends.      
+ 2. there is pretty consistently more crabs in the Western half of the Gulf, Particularly off Louisiana.     3. There are less crabs in the Fall Survey than the Summer. 
+ 
+ 
+ If the goal was to explain why this is so I'd say that its likely the difference in bottom types in these two offshore areas sand/hard bottom vs. mud and then coupled with more crabs inshore off Louisiana so you are just starting with more crabs to begin with. But, for this paper I'm thinking we point out
+ 
+  * Offshore population, as predicted from SEAMAP is noisy, and that it would make sense to split it East and West based on the locations where we see them and how different the habitats become     
+  * Point out that we see less as we sampling moves East and the largest offshore population in off Louisiana     
+  * Point out that there are many fewer in the Fall     
+
+

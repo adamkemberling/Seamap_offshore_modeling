@@ -1,0 +1,1077 @@
+---
+title: "Egg Analyses Model Markup"
+author: "Adam A Kemberling"
+date: "2/4/2019"
+output: 
+  html_document:
+    toc: TRUE
+    toc_float: TRUE
+    mathjax: null
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, comment = NA, message = FALSE, warning = FALSE)
+
+library(tidyverse, quietly = TRUE)
+library(broom)
+library(knitr)
+library(here)
+library(rnaturalearth)
+library(sf)
+library(scales)
+
+#Mixed Modeling PAckages
+library(lme4)
+library(afex)
+library(broom.mixed)
+library(emmeans)
+
+## squash panels together
+zero_margin <- theme(panel.spacing=grid::unit(0,"lines")) 
+library(lattice)
+library(dotwhisker)  ## coefficient plots
+library(broom.mixed)
+conflicted::conflict_prefer("select", "dplyr")
+conflicted::conflict_prefer("filter", "dplyr")
+conflicted::conflict_prefer("lmer", "lme4")
+
+#Format ggplot for rest of document
+theme_set(theme_bw() + theme(panel.grid.major = element_blank(), 
+                             panel.grid.minor = element_blank(), 
+                             panel.border = element_rect(fill = NA)))
+
+```
+
+# Load and clean data
+
+```{r}
+#crabdat <- read_csv("~/Dropbox (The Craboratory)/The Craboratory/Kemberling/SEAMAP_2017/2017_allcrabs_onerow_withstationdata.csv",
+# guess_max = 10000, col_types = cols()) 
+# eggdat <- read_csv("~/Dropbox (The Craboratory)/The Craboratory/Kemberling/SEAMAP_2017/Reproductive_analysis/seamap_summerandfall2017_crabs.csv", guess_max = 10000, col_types = cols())
+
+crabdat <- read_csv(here("data/repo/2017_allcrabs_onerow_withstationdata.csv"), guess_max = 10000, col_types = cols())
+eggdat <- read_csv(here("data/repo/seamap_summerandfall2017_crabs.csv"), guess_max = 10000, col_types = cols())
+
+eggdat <- eggdat %>% 
+  mutate(Egg_stage = factor(eggdat$Egg_stage),
+         molt_stage = factor(molt_stage),
+         Estimated_fecundity = ifelse(Estimated_fecundity == "#DIV/0!", NA, Estimated_fecundity),
+         Estimated_fecundity = as.numeric(Estimated_fecundity))
+
+
+#Zack wants to see if regions matter, so lets add them in now, gonna need the station info data though
+#stat_dat <- read_csv("~/Dropbox (The Craboratory)/The Craboratory/Kemberling/SEAMAP_2017/2017_allcrabs_onerow_withstationdata.csv", guess_max = 10000, col_types = cols())
+
+stat_dat <- read_csv(here("data/repo/2017_allcrabs_onerow_withstationdata.csv"), guess_max = 10000, col_types = cols())
+
+# #verify that the unique ID's are the same, they were made in a separate script
+# stat_dat$Unique_ID %in% eggdat$Unique_ID
+# eggdat$Unique_ID %in% stat_dat$Unique_ID
+
+#Pull the columns we want out, merge them to eggdat by the station info
+eggdat <- stat_dat %>%  
+  select(Unique_ID, Agency, STA_TIME, END_TIME,STA_LON, STA_LAT) %>% 
+  right_join(eggdat, by = "Unique_ID")
+
+
+```
+
+# Add Regions + Explore Data {.tabset .tabset-fade .tabset-pills}
+
+Regions:  	
+
+ * S. Texas (Matagorda Bay south)     
+ * TX/LA: (between Matagorda Bay and MS River delta)      
+ * MS Bight: LA east of MS River, MS, AL     
+ * Florida     
+
+```{r}
+
+
+#basemap for reference
+#usmap <- map_data("state")
+
+usmap <- ne_states(country = "united states of america") %>% 
+  st_as_sf() %>% 
+  filter(region == "South")
+
+mex <- ne_states(country = "mexico") %>% 
+  st_as_sf()
+
+
+# Add the statzone using statzone polygon - use this to make regions consistent between models
+#szones <- read_sf(here("GIS_objects",  "NMFS_Fishing_Grids_GOM_2013", "NMFS_Fishing_Grids_GOM_2013.shp"), crs = 4326)
+szones <- read_sf(here("data/gis_files","NMFS_Fishing_Grids_GOM_2013.shp"), crs = 4326)
+
+# Add a better StatZone ID by spatial overlap with NMFS Zones
+eggdat <- eggdat %>% 
+  st_as_sf(coords = c("STA_LON", "STA_LAT"), crs = 4326, remove = FALSE) %>% 
+  st_join(szones["StatZone"]) %>% 
+  st_set_geometry(NULL) %>% 
+  as.data.frame() %>% 
+  mutate(StatZone = factor(StatZone),
+         StatZone = fct_rev(StatZone))
+```
+
+## Map Stations with Repro Data
+
+```{r}
+# #show where they are
+# ggplot() + 
+#   geom_point(data = eggdat, aes(STA_LON, STA_LAT)) + 
+#   geom_sf(data = usmap, fill = "antiquewhite1") + 
+#   geom_sf(data = mex, fill = "antiquewhite1") +
+#   coord_sf(xlim = c(-80.5, -97.5), ylim = c(24.75, 31)) +
+#   labs(x= "", y = "") +
+#   theme_minimal() +
+#   ggtitle("Raw Data")
+
+# #Make regions
+# eggdat <- eggdat %>% 
+#   mutate(region = ifelse(STA_LAT < 28.387595 & STA_LON < -96, "South Texas", "TX/LA"),
+#          region = ifelse(STA_LON > -89.2, "MS Bight", region),
+#          region = ifelse(STA_LON > -87.5, "FL", region),
+#          region = factor(region))
+# 
+# eggdat %>% count(region, StatZone)
+# 
+# 
+# 
+# #check by plotting
+# ggplot() + 
+#   geom_point(data = eggdat, aes(STA_LON, STA_LAT, color = region)) + 
+#   geom_sf(data = usmap, fill = "antiquewhite1") + 
+#   geom_sf(data = mex, fill = "antiquewhite1") +
+#   coord_sf(xlim = c(-80.5, -97.5), ylim = c(24.75, 31)) +
+#   labs(x= "", y = "") +
+#   theme_minimal() + theme(legend.position = "bottom",
+#                           panel.border = element_rect(fill = NA)) +
+#   ggtitle("Color by Region")
+
+#Regions That are less arbitrary
+eggdat <- eggdat %>% 
+  mutate(region = ifelse(StatZone %in% seq("21", "18"), "Texas", "Louisiana"),
+         region = ifelse(StatZone %in% seq("12", "10"), "MS Bight", region),
+         region = ifelse(StatZone %in% seq("1", "9"), "Florida", region),
+         region = factor(region))
+
+
+#check by plotting
+ggplot() + 
+  geom_point(data = eggdat, aes(STA_LON, STA_LAT, color = StatZone, shape = region)) + 
+  geom_sf(data = usmap, fill = "antiquewhite1") + 
+  geom_sf(data = mex, fill = "antiquewhite1") +
+  coord_sf(xlim = c(-80.5, -97.5), ylim = c(24.75, 31)) +
+  labs(x= "", y = "") +
+  theme_minimal() + theme(legend.position = "bottom",
+                          panel.border = element_rect(fill = NA)) +
+  guides(shape = guide_legend(title = "Region", title.position = "top", title.hjust = 0.5),
+         color = guide_legend(title = "Stat Zone", title.position = "top", title.hjust = 0.5)) +
+  ggtitle("Sample Regions and Corresponding Stat Zones")
+
+```
+
+***
+
+##  Fix Egg Volume Measurement
+
+I noticed a few crabs had egg sizes that were much higher than others, so going to recalculate the volume from the egg dimensions to compare.
+
+
+```{r}
+#Looks like the calculated volumes might be deviating from 4/3*pi*r^3, so I'm gonna check that here
+eggdat <- eggdat %>% 
+  mutate(new_vol = (4/3) * pi * ((diam1_mm + diam2_mm) / 4) ^ 3) %>%
+  filter(is.na(Egg_stage) == FALSE)
+
+p1 <- eggdat %>% 
+  ggplot() + 
+  geom_point(aes(egg_volume, new_vol, color = Unique_ID), show.legend = FALSE) +
+  ggtitle("Raw volume vs. Corrected")
+p1
+#plotly::ggplotly(p1)
+
+```
+
+
+So the excel file on the dropbox has some inconsistencies with the estimated fecundity, and other columns that were drag-down in excel.
+
+The values that appeared much higher have the correct volume calculations, the others have something different.
+
+finish analysis with new_vol.
+
+**Pull Crab Specific Fecundity Details: **
+
+For analyses relating to egg characteristics (egg volume, estimated fecundity), measurements will be the mean value for each crab to avoid dealing with repeated measures.
+
+```{r pull fecundity data}
+
+# #Check to see if hand calculations (Estimated_fecundity) = programatic estimates (mean_fecundity)
+# eggdat %>% 
+#   filter(ovigerous == "yes") %>% 
+#   group_by(Unique_ID) %>% 
+#   summarise(mean_fecundity = mean(Estimated_fecundity, na.rm = TRUE),
+#             mean_volume    = mean(new_vol, na.rm = TRUE)) %>% 
+#   right_join(eggdat, by = "Unique_ID") %>% 
+#   select(Unique_ID, Estimated_fecundity, mean_fecundity)
+
+
+# # We cool, just use Estimated_fecundity, but pull one entry for each crab
+
+# #Take the mean value of each egg measurement so theres one value per crab
+fecunddat_means <- eggdat %>%
+  filter(ovigerous == "yes") %>%
+  group_by(Unique_ID) %>%
+  summarise(Estimated_fecundity = mean(Estimated_fecundity, na.rm = T),
+            egg_volume = mean(new_vol, na.rm = T)) %>%
+  ungroup()
+
+
+#Pull crab specific details and combine
+fecunddat <- eggdat %>% 
+  filter(ovigerous == "yes") %>% 
+  distinct(Unique_ID, .keep_all = TRUE) %>% 
+  select(Unique_ID, ovigerous, STA_LON, STA_LAT, Season, region, Crab_weight, Carapace_width, Standard_cw,                   molt_stage, Eggmass_weight, Egg_stage, Percent_fert) %>% 
+  
+    left_join(fecunddat_means, by = "Unique_ID")  %>%
+  mutate(
+    #Make bins for egg stage
+    es_bins = ifelse(Egg_stage %in% c(1,3), "early", "late"),
+    es_bins = ifelse(Egg_stage %in% c(4:6), "middle", es_bins),
+    es_bins = factor(es_bins, levels = c("early", "middle", "late"))
+  )
+
+
+#Fecundity Summary Stats
+fecundity_max <-  round(max(fecunddat$Estimated_fecundity) / 1e6, 3)
+fecundity_min <-  round(min(fecunddat$Estimated_fecundity) / 1e6, 3)
+fecundity_mean <- round(mean(fecunddat$Estimated_fecundity) / 1e6, 3)
+fecundity_se <-   round( 
+  (sd(fecunddat$Estimated_fecundity) / sqrt(nrow(fecunddat))  / 1e6), 
+  3)
+
+
+
+```
+
+***
+
+## Exploratory Plots
+
+### 1. egg volume ~ carapace width
+
+```{r}
+p1 <- ggplot(eggdat) +
+  geom_point(aes(Carapace_width, new_vol, color = Unique_ID), alpha = 0.5, show.legend = FALSE) +
+  facet_wrap(~Egg_stage)
+
+p1
+#plotly::ggplotly(p1)
+
+```
+
+
+### 2. Egg Volume ~ Egg Stage
+
+```{r}
+eggdat %>% 
+  ggplot(aes(Egg_stage, new_vol)) + 
+  geom_boxplot() +ylab("Volume mm^3")
+
+```
+
+***
+
+# Estimated Fecundity Models {.tabset .tabset-fade .tabset-pills}
+
+### Fecundity Range :
+
+
+Estimated fecundity ranged from `r fecundity_min` - `r fecundity_max` million eggs.     
+
+With mean fecundity of `r fecundity_mean` +/- `r fecundity_se`  millions of eggs.      
+
+
+## Gaussian w/ identity link
+
+```{r}
+#Plot relationships with different link functions
+#Gaussian
+m1_g <- glm(Estimated_fecundity ~ Carapace_width, data = fecunddat)
+
+fecunddat %>% 
+  ggplot(aes(Carapace_width, Estimated_fecundity)) + 
+  geom_point() + geom_smooth(method = "glm", 
+                             formula = y~x,
+                             method.args = list(family = gaussian(link = 'identity'))) +
+  scale_y_continuous(labels = comma_format())
+
+tidy(m1_g) %>% kable()
+
+
+```
+
+
+***
+
+## Gaussian w/ log link
+
+```{r}
+#Log link
+m1_log <- glm(Estimated_fecundity ~ Carapace_width, data = fecunddat, family = gaussian(link = "log"))
+
+fecunddat %>% 
+  ggplot(aes(Carapace_width, Estimated_fecundity)) + 
+  geom_point(color = "gray20") + 
+  geom_smooth(method = "glm", 
+              formula = y~x,
+              method.args = list(family = gaussian(link = 'log')),
+              color = "black",
+              linetype = 2) +
+  scale_y_continuous(labels = comma_format()) +
+  #theme_classic() +
+  xlab("Carapace Width (mm)") +
+  ylab("Estimated Fecundity (Number of Eggs)")
+
+tidy(m1_log) %>% kable()
+
+daic <- round(AIC(m1_g) - AIC(m1_log), 2)
+
+
+```
+
+
+Delta AIC for log-link - gaussian models = `r daic`
+
+***
+
+## Region intercepts (ANCOVA)
+
+```{r fecundity ancova}
+
+#Zack wants to see if regions matter, so lets add them in now
+m1_ancova <- glm(Estimated_fecundity ~ Carapace_width + region, data = fecunddat, family = gaussian(link = "log"))
+#summary(m1)
+
+
+#Make a prediction dataset to plot them individually
+xrange <- seq(min(fecunddat$Carapace_width), max(fecunddat$Carapace_width), by = .1)
+# pred.df <- data.frame("Carapace_width" = rep(xrange, 4), 
+#                       "region" = c(rep("FL",          length(xrange)),
+#                                    rep("MS Bight",    length(xrange)),
+#                                    rep("South Texas", length(xrange)),
+#                                    rep("TX/LA",       length(xrange)))
+# )
+# 
+# pred.df$fits <- predict(m1, newdata =  pred.df, type = "response")
+# ms <- dplyr::filter(pred.df, region == "MS Bight")
+# tx <- dplyr::filter(pred.df, region == "South Texas")
+# la <- dplyr::filter(pred.df, region == "TX/LA")
+# fl <- dplyr::filter(pred.df, region == "FL")
+
+
+
+
+pred.df <- data.frame("Carapace_width" = rep(xrange, 4), 
+                      "region" = c(rep("Florida",         length(xrange)),
+                                   rep("MS Bight",        length(xrange)),
+                                   rep("Texas",           length(xrange)),
+                                   rep("Louisiana",       length(xrange)))
+)
+
+pred.df$fits <- predict(m1_ancova, newdata =  pred.df, type = "response")
+ms <- dplyr::filter(pred.df, region == "MS Bight")
+tx <- dplyr::filter(pred.df, region == "Texas")
+la <- dplyr::filter(pred.df, region == "Louisiana")
+fl <- dplyr::filter(pred.df, region == "Florida")
+
+
+# #That was a yuge pain
+# p1 <- ggplot() +
+#   geom_point(data = fecunddat, aes(Carapace_width, Estimated_fecundity)) +
+#   geom_line(data = fl, aes(Carapace_width, fits, color = "FL", group = 1)) +
+#   geom_line(data = ms, aes(Carapace_width, fits, color = "Ms Bight", group = 1)) +
+#   geom_line(data = tx, aes(Carapace_width, fits, color = "South Texas", group = 1)) +
+#   geom_line(data = la, aes(Carapace_width, fits, color = "TX/LA", group = 1))  +
+#   theme_classic() +
+#   xlab("Carapace Width (mm)") +
+#   ylab("Estimated Fecundity (Number of Eggs)")
+# 
+# p1
+
+#That was a yuge pain
+p1 <- ggplot() +
+  geom_point(data = fecunddat, aes(Carapace_width, Estimated_fecundity)) +
+  geom_smooth(data = fecunddat,
+              aes(Carapace_width, Estimated_fecundity),
+              method = "glm",
+              formula = y~x,
+              method.args = list(family = gaussian(link = 'log')),
+              color = "black",
+              linetype = 2) +
+  scale_y_continuous(labels = comma_format()) +
+  geom_line(data = fl, aes(Carapace_width, fits, color = "Florida", group = 1)) +
+  geom_line(data = ms, aes(Carapace_width, fits, color = "MS Bight", group = 1)) +
+  geom_line(data = tx, aes(Carapace_width, fits, color = "Texas", group = 1)) +
+  geom_line(data = la, aes(Carapace_width, fits, color = "Louisiana", group = 1))  +
+  theme_classic() + theme(legend.title = element_blank()) +
+  xlab("Carapace Width (mm)") +
+  ylab("Estimated Fecundity (Number of Eggs)")
+
+p1
+
+tidy(m1_ancova) %>% kable()
+
+```
+
+
+***
+
+## Carapace width region interaction
+
+If we include region in the model we get kind of a weird result, that being that carapace width is no longer significant:
+
+```{r fecundity interaction}
+m1_r <- glm(Estimated_fecundity ~ Carapace_width * region, 
+          data = fecunddat,
+          family = gaussian(link = "log"))
+
+
+#and plot
+fecunddat %>% 
+  ggplot(aes(Carapace_width, Estimated_fecundity,)) + 
+  geom_point(aes(color = region)) + 
+  geom_smooth(method = "glm", 
+              formula = y ~ x,
+              method.args = list(family = gaussian(link = 'log')),
+              color = "black",
+              linetype = 2) +
+  scale_y_continuous(labels = comma_format()) +
+  facet_wrap(~region) +
+  theme_classic() + theme(legend.title = element_blank()) +
+  xlab("Carapace Width (mm)") +
+  ylab("Estimated Fecundity (Number of Eggs)")
+
+tidy(m1_r) %>% kable()
+
+```
+
+Which is confusing because its pretty clear on its own.
+
+***
+
+
+## Carapace Width & Season
+
+Check Season as well just to be sure.
+
+```{r}
+m1_s <- glm(Estimated_fecundity ~ Carapace_width + Season, 
+          data = fecunddat,
+          family = gaussian(link = "log"))
+
+#Prediction dataframe
+pred.df <- data.frame("Carapace_width" = rep(xrange, 4), 
+                      "Season" = c(rep("Summer", length(xrange)),
+                                   rep("Fall",   length(xrange)))
+)
+
+pred.df$fits <- predict(m1_s, newdata =  pred.df, type = "response")
+summer <- dplyr::filter(pred.df, Season == "Summer")
+fall <-   dplyr::filter(pred.df, Season == "Fall")
+
+
+
+#That was a yuge pain
+p1 <- ggplot() +
+  geom_point(data = fecunddat, aes(Carapace_width, Estimated_fecundity)) +
+  geom_line(data = summer, aes(Carapace_width, fits, color = "Summer", group = 1)) +
+  geom_line(data = fall,   aes(Carapace_width, fits, color = "Fall", group = 1)) + 
+  scale_y_continuous(labels = comma_format()) +
+  theme_classic() + theme(legend.title = element_blank()) +
+  xlab("Carapace Width (mm)") +
+  ylab("Estimated Fecundity (Number of Eggs)")
+
+p1
+
+tidy(m1_s) %>% kable()
+
+```
+
+## Model Comparison Table
+
+```{r}
+#Comparison Table
+summ.table <- do.call(rbind, lapply(list(m1_g, m1_log, m1_ancova, m1_r), broom::glance))
+
+table.cols <- c("df.residual", "deviance", "AIC")
+reported.table <- summ.table[table.cols]
+names(reported.table) <- c("Resid. Df", "Resid. Dev", "AIC")
+
+reported.table[['dAIC']] <-  with(reported.table, AIC - min(AIC))
+reported.table[['weight']] <- with(reported.table, exp(- 0.5 * dAIC) / sum(exp(- 0.5 * dAIC)))
+reported.table$AIC <- NULL
+reported.table$weight <- round(reported.table$weight, 2)
+reported.table$dAIC <- round(reported.table$dAIC, 1)
+row.names(reported.table) <- c("base : Gaussian", "base : Log-link", "region : no interaction", "region : interaction")
+
+reported.table %>% 
+  arrange(dAIC) %>% 
+  kable()
+```
+
+
+
+
+
+# Egg size models {.tabset .tabset-fade .tabset-pills}
+
+## Investigate Seasons  - individual eggs
+
+(if we have fall egg sizes), we do **not** have enough (n = 5)  
+
+We also have repeated measures for measurements on each egg mass, so gonna have the eggmass/crabID as a random effect as they are likely correlated. Otherwise we could use the average egg measurements for each crab.
+
+
+```{r}
+p1 <- ggplot(eggdat) +
+  geom_point(aes(Carapace_width, new_vol, color = Season), alpha = 0.5, show.legend = FALSE) +
+  #facet_grid(Egg_stage ~ Season) +
+  labs(
+    x = "Carapace Width",
+    y = "Egg Volume (mm^3)"
+  )
+
+p1
+#plotly::ggplotly(p1)
+
+
+```
+
+***
+
+## GLM - individual eggs
+
+```{r}
+m1 <- lm(new_vol ~ Carapace_width, data = eggdat)
+
+
+
+ggplot(eggdat, aes(x = Carapace_width, y = new_vol)) +
+  #facet_wrap(~Unique_ID, nrow = 5) +
+  geom_point() +
+  theme_classic() +
+  geom_hline(yintercept = mean(eggdat$new_vol), linetype = 2, 
+             aes(color = "Overall Mean")) + 
+  geom_smooth(data = eggdat, 
+              aes(x = Carapace_width, y = new_vol, group = 1), 
+              method = "glm") +
+  scale_color_manual(#name = "",
+                     values = c("Overall Mean"     = "gray")) +
+  labs(
+    x = "Carapace Width (mm)",
+    y = "Egg Volume",
+    title = "Base Model"
+    )
+
+#Model Results
+tidy(m1) %>% kable()
+
+#qqplots
+qqnorm(resid(m1))
+qqline(resid(m1))
+```
+
+***
+
+## GLM - eggmass means
+
+```{r}
+m1 <- lm(egg_volume ~ Carapace_width, data = fecunddat)
+
+
+
+ggplot(fecunddat, aes(x = Carapace_width, y = egg_volume)) +
+  #facet_wrap(~Unique_ID, nrow = 5) +
+  geom_point() +
+  theme_classic() +
+  geom_hline(yintercept = mean(eggdat$new_vol), linetype = 2, 
+             aes(color = "Overall Mean")) + 
+  geom_smooth(data = eggdat, 
+              aes(x = Carapace_width, y = new_vol, group = 1), 
+              method = "glm") +
+  scale_color_manual(#name = "",
+                     values = c("Overall Mean"     = "gray")) +
+  labs(
+    x = "Carapace Width (mm)",
+    y = "Egg Volume",
+    title = "Base Model"
+    )
+
+#Model Results
+tidy(m1) %>% kable()
+
+```
+
+***
+
+## Mixed Model - individual eggs
+
+```{r, warning = FALSE, message = FALSE}
+
+#guide: http://bbolker.github.io/mixedmodels-misc/glmmFAQ.html#model-specification
+
+# Carapace width plus unique id intercept
+m2 <- lme4::lmer(new_vol ~ Carapace_width + (1 | Unique_ID), data = eggdat)
+
+#summary(m2)
+
+
+# # Confidence intervals
+# confint(m2)
+
+# # Random Effects
+# lme4::ranef(m2)
+
+#Variance Partitioning - From summary(m2)
+re_var <- 2.904e-06
+resid_var_total <- 2.904e-06 + 1.000e-06 #Total residual variance *AFTER* Fixed effects
+re_varpart <- re_var / resid_var_total * 100
+
+
+#Fixed Effects Plot
+(fe_plot <- ggplot(eggdat, aes(x = Carapace_width, y = new_vol)) +
+  #facet_wrap(~Unique_ID, nrow = 5) +
+  geom_point() +
+  theme_classic() +
+  geom_hline(yintercept = mean(eggdat$new_vol), linetype = 2,
+             aes(color = "Overall Mean")) + 
+  geom_smooth(data = eggdat, 
+              aes(x = Carapace_width, y = new_vol, group = 1), 
+              method = "glm") +
+  geom_point(data = cbind(eggdat, pred = predict(m2)), 
+             aes(y = pred, color = "Individual Means"), 
+             size = 2) +
+  scale_color_manual(name = "",
+                     values = c("Individual Means" = "red",
+                                "Overall Mean"     = "gray")
+                     ) +
+  theme(legend.position = "right") +
+  labs(
+    x = "Carapace Width (mm)",
+    y = "Egg Volume",
+    title = "Overall Effect"
+    )   
+  )
+
+#Model Results
+tidy(m2) %>% kable() #not significant
+
+# #Save this code for other MEM ****
+# #Random Effects Plot - No line because single x value for each one
+# (mm_plot <- ggplot(eggdat, aes(x = Carapace_width, y = new_vol)) +
+#   facet_wrap(~Unique_ID, nrow = 5) +
+#   geom_point() +
+#   theme_classic() +
+#   geom_line(data = cbind(eggdat, pred = predict(m2)), aes(y = pred)) +
+#   theme(legend.position = "none") +
+#   labs(
+#     x = "Carapace Width (mm)",
+#     y = "Egg Volume",
+#     title = "Individual - Level Effect"
+#     ) +
+#     zero_margin
+#   )
+
+```
+
+### Mixed Model Diagnostics
+
+```{r}
+# Diagnostics
+
+#qqplots
+qqnorm(resid(m2))
+qqline(resid(m2))
+```
+
+
+
+
+```{r, fig.height=8}
+# tt <- tidy(m2, effects="ran_vals")
+# ggplot(tt,aes(level,estimate))+
+#     geom_pointrange(aes(ymin=estimate-1.96*std.error,
+#                         ymax=estimate+1.96*std.error))+
+#     coord_flip()
+
+# #Fitted vs. residuals + qq
+# plot(m2)
+# qqmath(m2)
+
+# #group residuals
+# plot(m2, Unique_ID ~ resid(.))
+
+
+# #can also use augment from broom + ggplot
+# aa <- broom.mixed::augment(m2)
+# ggplot(aa, aes(Unique_ID, .resid)) +
+#   geom_boxplot() + 
+#   coord_flip()
+
+# #Plot random effects to look for outliers:
+# dotplot(ranef(m2, condVar=TRUE))
+
+#or again with ggplot arranged in ascending order
+tt <- tidy(m2, effects = "ran_vals") %>% 
+  arrange(estimate) %>% 
+  mutate(level = fct_inorder(level) #Order by ascending estimate
+         # , 
+         # significance = if_else(between(0, 
+         #                               estimate - 1.96 * std.error, 
+         #                               estimate + 1.96 * std.error),
+         #                       "Not Significant",
+         #                       "Significant")
+         ) 
+
+tt$significance <- NA
+
+for (i in 1:nrow(tt)) {
+  tt$significance[i] <- if_else(between(0, 
+                                       tt$estimate[i] - 1.96 * tt$std.error[i],
+                                       tt$estimate[i] + 1.96 * tt$std.error[i]),
+                               "Not Significant",
+                               "Significant")
+  
+}
+
+
+ggplot(tt, aes(level, estimate))+
+  geom_hline(yintercept = 0, linetype = 2, color = "navy", alpha = 0.5) +
+  geom_pointrange(aes(ymin = estimate - 1.96 * std.error,
+                      ymax = estimate + 1.96 * std.error,
+                      alpha = significance)) + 
+  scale_alpha_manual("", values = c("Significant" = 1,
+                                    "Not Significant" = 0.3)) +
+  
+  coord_flip()
+
+
+# #Use merTools to plot interval estimates
+# library(merTools)
+# merTools::plotREsim(REsim(m2))  # plot the interval estimates
+```
+
+### Mixed Model Inference
+
+
+```{r}
+
+####  Inference
+
+#coefficient Plot
+dwplot(m2) + geom_vline( xintercept = 0, lty = 2)
+
+
+#P-values - 
+library("lmerTest")
+lmer2R <- lmer(new_vol ~ Carapace_width + (1 | Unique_ID), data = eggdat)
+detach("package:lmerTest")
+
+
+#Now get p=values with summary
+#summary(lmer2R) #default uses the Satterthwaite approximation to the degrees of freedom. You can
+
+#also use 
+
+#summary(lmer2R, ddf="Kenward-Roger") #for Kenward-roger which are more accurrate, take longer
+#They are the same here
+
+#Here are the type II (sequential) ANOVA results:
+anova(lmer2R) #done withlmerTest gives you denominator DF
+#anova(m2)     #regular lmer does not
+
+#afex mixed can also be used to get the kenward-roger p-value
+#afex::mixed(new_vol ~ Carapace_width + (1 | Unique_ID), data = eggdat)
+
+
+#### Testing random effect
+#If we want to test the random effect, we would in principle remove the random effect and test with anova, '
+
+m1 <- glm(new_vol ~ Carapace_width, data = eggdat)
+anova(m2, m1)
+
+
+```
+
+
+
+### Variance Explained By Random Effect
+
+This is the variance explained after the fixed effects : `r round(re_varpart, 2)`
+
+
+***
+
+## Egg size ~ CW * region  - eggmass mean
+
+Plot the overall relationship first
+
+```{r}
+# #Individual eggs
+# eggdat %>% 
+#   ggplot(aes(Carapace_width, new_vol)) +
+#   geom_point(aes(color = region)) +
+#   geom_smooth(method = "glm",
+#               formula = y~x,
+#               method.args = list(family = gaussian(link = 'identity'))) +
+#   labs(
+#     x = "Carapace Width",
+#     y = "Egg Volume (mm^3)"
+#   )
+
+#mean eggmass values
+fecunddat %>% 
+  ggplot(aes(Carapace_width, egg_volume)) +
+  geom_point(aes(color = region)) +
+  geom_smooth(method = "glm",
+              formula = y~x,
+              method.args = list(family = gaussian(link = 'identity'))) +
+  labs(
+    x = "Carapace Width",
+    y = "Egg Volume (mm^3)"
+  )
+```
+
+Region seems to have a viable impact, but it may just look that way because of an interaction effect with egg size.
+
+```{r}
+# #individual eggs
+# eggdat %>% #facet region and egg stage
+#   ggplot(aes(Carapace_width, new_vol)) +
+#   geom_point(aes(color = Egg_stage), show.legend = FALSE) +
+#   facet_grid(region ~ Egg_stage) +
+#   theme(axis.text.x = element_text(angle = 90)) +
+#   labs(
+#     x = "Carapace Width",
+#     y = "Egg Volume (mm^3)"
+#   )
+
+fecunddat %>% #facet region and egg stage
+  ggplot(aes(Carapace_width, egg_volume)) +
+  geom_point(aes(color = Egg_stage), show.legend = FALSE) +
+  facet_grid(region ~ Egg_stage) +
+  theme(axis.text.x = element_text(angle = 90)) +
+  labs(
+    x = "Carapace Width",
+    y = "Egg Volume (mm^3)"
+  )
+
+```
+
+I don't think we will be able to tease this out with so many combinations with no data unless we re-bin into more general groups or drop regions like florida.
+
+When you look at the interactions you get this mess:
+
+```{r}
+# m1 <- glm(new_vol ~ Carapace_width + Egg_stage * region, 
+#           data = eggdat,
+#           family = gaussian(link = "identity"))
+
+
+m1 <- glm(egg_volume ~ Carapace_width + Egg_stage * region, 
+          data = fecunddat,
+          family = gaussian(link = "identity"))
+
+
+tidy(m1) %>% kable()
+```
+
+
+***
+
+## Egg Stage Bins
+
+### Egg Volume ~ Egg Bins
+
+```{r}
+
+fecunddat %>% #facet region and egg stage
+  ggplot(aes(Carapace_width, egg_volume)) +
+  geom_point(aes(color = Egg_stage), show.legend = FALSE) +
+  facet_grid(region ~ es_bins) +
+  theme(axis.text.x = element_text(angle = 90)) +
+  labs(
+    x = "Carapace Width",
+    y = "Egg Volume (mm^3)"
+  )
+
+fecunddat %>% 
+  ggplot(aes(es_bins, egg_volume)) +
+  geom_boxplot() +
+  labs(
+    x = "Egg Development Stage",
+    y = "Egg Volume (mm^3)"
+  )
+
+
+
+
+anova1 <- lm(egg_volume ~ es_bins, data = fecunddat) 
+summary(anova1)
+# anova1 <- aov(egg_volume ~ es_bins, data = fecunddat) 
+# tidy(anova1) %>% kable()
+
+```
+
+
+### Egg Volume ~ Region + Egg Bins
+
+```{r}
+
+fecunddat %>% 
+  ggplot(aes(Carapace_width, egg_volume)) +
+  geom_point(aes(color = es_bins)) +
+  geom_smooth(method = "glm",
+              formula = y~x,
+              method.args = list(family = gaussian(link = 'identity'))) +
+  facet_wrap(~region) +
+  labs(
+    x = "Carapace Width",
+    y = "Egg Volume (mm^3)"
+  ) + theme_minimal() + zero_margin
+
+```
+
+
+## Mean Egg Volume GLM - Final
+
+ * Carapace Width     
+ * Region (not enough sampling)      
+ * Season     
+
+```{r}
+ggplot(fecunddat, aes(Carapace_width, egg_volume)) +
+  geom_point(aes(color = es_bins)) +
+  geom_smooth(method = "glm") +
+  facet_wrap(~es_bins)
+
+
+
+m1 <- glm(egg_volume ~ Carapace_width * es_bins, data = fecunddat)
+tidy(m1) %>% kable()
+
+```
+
+
+
+***
+
+# Percent development Models
+
+## Percent developing normally ~ molt stage
+
+This one is nice and cut-and-dry, just an ANOVA to test the group differences.
+
+
+```{r}
+fecunddat %>% 
+  ggplot(aes(molt_stage, Percent_fert)) +
+  geom_boxplot(aes(color = molt_stage))
+
+
+anova1 <- lm(Percent_fert ~ molt_stage, data = fecunddat)
+summary(anova1)
+#anova1 <- aov(Percent_fert ~ molt_stage, data = fecunddat)
+#tidy(anova1) %>% kable()
+
+
+```
+
+
+Groups are unbalanced, and it throws a warning, but we're probably ok.
+
+```{r}
+fecunddat %>% count(molt_stage) %>% kable()
+```
+
+***
+
+## Percent developing normally ~ Egg stage
+
+```{r}
+fecunddat %>% 
+  ggplot(aes(fct_rev(es_bins), Percent_fert)) +
+  #geom_jitter(aes(color = region), height = 0, width = 0.1) + 
+  #geom_boxplot(aes(color = region)) + 
+  geom_boxplot(aes(color = es_bins)) + 
+  #coord_flip() +
+  ylim(c(0,1)) +
+  labs(
+    x = "Egg Stage",
+    y = "% Fertilized"
+  )
+
+
+anova1 <- lm(Percent_fert ~ es_bins, data = fecunddat)
+summary(anova1)
+#tidy(anova1) %>% kable()
+
+```
+
+
+***
+
+## Percent developing normally ~ region
+
+```{r}
+fecunddat %>% 
+  ggplot(aes(region, Percent_fert)) +
+  #geom_jitter(aes(color = region), height = 0.1, width = 0.1)
+  geom_boxplot(aes(color = region))
+
+
+anova1 <- lm(Percent_fert ~ region, data = fecunddat)
+summary(anova1)
+#tidy(anova1) %>% kable()
+
+```
+
+
+***
+
+## Percent Development - All
+
+This is a two-way crossed ANOVA comparing percent fertilization between egg stage bins and region with interactions.
+
+```{r}
+
+fecunddat %>% 
+  ggplot(aes(es_bins, Percent_fert)) +
+  #geom_jitter(aes(color = region), height = 0.1, width = 0.1)
+  geom_boxplot(aes(color = es_bins)) +
+  facet_wrap(~region) +
+  labs(caption = "Too much going on...")
+
+
+fecunddat %>% 
+  group_by(region, es_bins) %>% 
+  summarise(n = n(),
+            mean_fert = mean(Percent_fert))
+
+# anova1 <- aov(Percent_fert ~ region * es_bins * molt_stage, data = fecunddat)
+# tidy(anova1) %>% kable()
+
+anova1 <- lm(Percent_fert ~ region * es_bins, data = fecunddat)
+summary(anova1)
+#tidy(anova1) %>% kable()
+
+```
+
+***
+
+
+

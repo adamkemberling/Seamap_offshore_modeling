@@ -1,0 +1,335 @@
+---
+title: "August-ish Manuscript Edits"
+author: "Adam A Kemberling"
+date: "10/1/2019"
+output: 
+  html_document:
+    toc: TRUE
+    toc_float: TRUE
+    mathjax: null
+editor_options: 
+  chunk_output_type: console
+---
+
+# Crab Mass x Carapace Width
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE, 
+                      comment = NA, 
+                      message = FALSE, 
+                      warning = FALSE)
+```
+
+
+```{r}
+#Load Packages
+library(tidyverse, quietly = TRUE)
+library(broom)
+library(knitr)
+library(here)
+library(rnaturalearth)
+library(sf)
+library(scales)
+library(magrittr)
+library(statmod)
+
+#Spatial Polygons
+usmap <- ne_states(country = "united states of america") %>% 
+  st_as_sf() %>% 
+  filter(region == "South")
+mex <- ne_states(country = "mexico") %>% 
+  st_as_sf()
+
+
+#Load Data
+
+#Egg Data
+eggdat <- read_csv(here("data/repo/seamap_summerandfall2017_crabs.csv"), guess_max = 10000, col_types = cols())
+eggdat <- eggdat %>% 
+  mutate(Egg_stage = factor(eggdat$Egg_stage),
+         molt_stage = factor(molt_stage),
+         Estimated_fecundity = ifelse(Estimated_fecundity == "#DIV/0!", NA, Estimated_fecundity),
+         Estimated_fecundity = as.numeric(Estimated_fecundity))
+
+#Stations
+stat_dat <- read_csv(here("data/repo/2017_allcrabs_onerow_withstationdata.csv"), guess_max = 10000, col_types = cols())
+eggdat <- stat_dat %>%  
+  select(Unique_ID, Agency, STA_TIME, END_TIME,STA_LON, STA_LAT) %>% 
+  right_join(eggdat, by = "Unique_ID")
+
+
+#Regions and Statzones
+# Add the statzone using statzone polygon - use this to make regions consistent between models
+szones <- read_sf(here("data/gis_files","NMFS_Fishing_Grids_GOM_2013.shp"), crs = 4326)
+
+# Add a better StatZone ID by spatial overlap with NMFS Zones
+eggdat <- eggdat %>% 
+  st_as_sf(coords = c("STA_LON", "STA_LAT"), crs = 4326, remove = FALSE) %>% 
+  st_join(szones["StatZone"]) %>% 
+  st_set_geometry(NULL) %>% 
+  as.data.frame() %>% 
+  mutate(StatZone = factor(StatZone),
+         StatZone = fct_rev(StatZone))
+
+
+#Regions That are less arbitrary
+eggdat <- eggdat %>% 
+  mutate(region = ifelse(StatZone %in% seq("21", "18"), "Texas", "Louisiana"),
+         region = ifelse(StatZone %in% seq("12", "10"), "MS Bight", region),
+         region = ifelse(StatZone %in% seq("1", "9"), "Florida", region),
+         region = factor(region),
+         #Make bins for egg stage
+         es_bins = ifelse(Egg_stage %in% c(1,3), "early", "late"),
+         es_bins = ifelse(Egg_stage %in% c(4:6), "middle", es_bins),
+         es_bins = factor(es_bins, levels = c("early", "middle", "late"))
+  )
+
+
+
+#Fix egg volume issue
+eggdat <- eggdat %>% 
+  mutate(new_vol = (4/3) * pi * ((diam1_mm + diam2_mm) / 4) ^ 3) %>%
+  filter(is.na(Egg_stage) == FALSE)
+
+#Write egg data out as final analysis set
+write_csv(eggdat, 
+          here::here("data", "repo", "analysis_sets", "seamap_repro_eggs.csv"), 
+          col_names = TRUE)
+
+
+#Make a separate DF for just the ovigerous crabs
+# #Take the mean value of each egg measurement so theres one value per crab
+fecunddat_means <- eggdat %>%
+  filter(ovigerous == "yes") %>%
+  group_by(Unique_ID) %>%
+  summarise(Estimated_fecundity = mean(Estimated_fecundity, na.rm = T),
+            egg_volume = mean(new_vol, na.rm = T)) %>%
+  ungroup()
+
+
+#Pull crab specific details and combine
+fecunddat <- eggdat %>% 
+  filter(ovigerous == "yes") %>% 
+  distinct(Unique_ID, .keep_all = TRUE) %>% 
+  select(Unique_ID, ovigerous, STA_LON, STA_LAT, Season, region, Crab_weight, Carapace_width, Standard_cw, molt_stage, Eggmass_weight, Egg_stage, Percent_fert, es_bins) %>% 
+    left_join(fecunddat_means, by = "Unique_ID")  
+
+#Write that out for crab specific means
+write_csv(fecunddat, 
+          here::here("data", "repo", "analysis_sets", "seamap_repro_eggmass_avg.csv"), 
+          col_names = TRUE)
+
+
+```
+
+
+## Total Carapace Width
+
+```{r crab condition}
+
+#Total Carapace Width
+model_corr <- fecunddat %>% filter(is.na(Carapace_width) == FALSE, is.na(Crab_weight) == FALSE) %$% 
+  cor(.$Carapace_width, .$Crab_weight) %>% round(3)
+
+fecunddat %>% 
+  ggplot(aes(Carapace_width, Crab_weight)) + 
+  geom_point() +
+  geom_smooth(method = "glm",
+              formula = y~x,
+              method.args = list(family = gaussian(link = 'identity')),
+              color = "black", linetype = 2) +
+  labs(x = "Total Carapace Width", 
+       y = "Total Crab Mass (g)") +
+  annotate(geom = "text", x = 130, y = 300, label = str_c("Correllation: \n", model_corr))
+```
+
+### Fits - Total CW
+
+```{r}
+t_cw_mod <- glm(Crab_weight ~ Carapace_width, 
+                data = fecunddat, 
+                family = gaussian(link = "identity"))
+
+t1 <- qresid(t_cw_mod)
+qqnorm(t1)
+abline(0, 1, col = "red")
+
+hist(t_cw_mod$residuals, main = "Total Carapace Width Residuals")
+
+```
+
+
+## Standard Carapace Width
+
+```{r}
+
+
+# Standard Carapace Width
+model_corr <- fecunddat %>% filter(is.na(Standard_cw) == FALSE, is.na(Crab_weight) == FALSE) %$% 
+  cor(.$Standard_cw, .$Crab_weight) %>% round(3)
+
+fecunddat %>% 
+  ggplot(aes(Standard_cw, Crab_weight)) + 
+  geom_point() +
+  geom_smooth(method = "glm",
+              formula = y~x,
+              method.args = list(family = gaussian(link = 'identity')),
+              color = "black", linetype = 2) +
+  labs(x = "Standard Carapace Width", y = "Total Crab Mass (g)") +
+  annotate(geom = "text", x = 100, y = 300, label = str_c("Correllation: \n", model_corr))
+```
+
+
+
+### Fits - Standard CW
+
+
+```{r}
+s_cw_mod <- glm(Crab_weight ~ Standard_cw, 
+                data = fecunddat, 
+                family = gaussian(link = "identity"))
+
+t1 <- qresid(s_cw_mod)
+qqnorm(t1)
+abline(0, 1, col = "red")
+
+hist(s_cw_mod$residuals, main = "Standard Carapace Width Residuals")
+```
+
+
+
+# Fecundity x crab mass
+
+```{r}
+
+# Standard Carapace Width
+model_corr <- fecunddat %>% 
+  filter(is.na(Crab_weight) == FALSE, is.na(Estimated_fecundity) == FALSE) %$% 
+  cor(.$Crab_weight, .$Estimated_fecundity) %>% round(3)
+
+fecunddat %>% 
+  ggplot(aes(Crab_weight, Estimated_fecundity)) + 
+  geom_point() +
+  geom_smooth(method = "glm",
+              formula = y~x,
+              method.args = list(family = gaussian(link = 'identity')),
+              color = "black", linetype = 2) +
+  labs(x = "Crab Weight (w/o eggmass in g)", y = "Estimated Fecundity (Total Eggs)") +
+  scale_y_continuous(labels = comma_format()) +
+  annotate(geom = "text", x = 130, y = 6250000, label = str_c("Correllation: \n", model_corr))
+
+
+
+```
+
+### Fits
+
+```{r}
+fecund_weight_mod <- glm(Estimated_fecundity ~ Crab_weight, 
+                data = fecunddat, 
+                family = gaussian(link = "identity"))
+
+t1 <- qresid(fecund_weight_mod)
+qqnorm(t1)
+abline(0, 1, col = "red")
+
+hist(fecund_weight_mod$residuals, main = "Fecundity ~ Crab Weight - Residuals")
+```
+
+
+
+
+# Fecundity x Carapace Width
+
+## Standard Identity link
+```{r, eval = FALSE}
+
+plot_mod <- glm(data = fecunddat, Estimated_fecundity ~ Carapace_width, family = gaussian(link = "identity"))
+summary(plot_mod)
+```
+
+
+```{r}
+fecunddat %>% 
+  ggplot(aes(Carapace_width, Estimated_fecundity)) + 
+  geom_point() +
+  geom_smooth(method = "glm",
+              formula = y~x,
+              method.args = list(family = gaussian(link = 'identity')),
+              color = "black", linetype = 2) +
+  labs(x = "Total Carapace Width (mm)", y = "Estimated Fecundity (Total Eggs)") +
+  scale_y_continuous(labels = comma_format()) 
+```
+
+
+### Fits
+
+```{r}
+plot_mod <- glm(data = fecunddat, Estimated_fecundity ~ Carapace_width, family = gaussian(link = "identity"))
+t1 <- qresid(plot_mod)
+qqnorm(t1)
+abline(0, 1, col = "red")
+
+hist(plot_mod$residuals, main = "Identity-link residuals")
+
+```
+
+
+
+## Log-link
+
+```{r, eval = FALSE}
+
+plot_mod <- glm(data = fecunddat, Estimated_fecundity ~ Carapace_width, family = gaussian(link = "log"))
+summary(plot_mod)
+```
+
+
+
+```{r}
+fecunddat %>% 
+  ggplot(aes(Carapace_width, Estimated_fecundity)) + 
+  geom_point() +
+  geom_smooth(method = "glm",
+              formula = y~x,
+              method.args = list(family = gaussian(link = 'log')),
+              color = "black", linetype = 2) +
+  labs(x = "Total Carapace Width (mm)", y = "Estimated Fecundity (Total Eggs)") +
+  scale_y_continuous(labels = comma_format()) 
+```
+
+### Fits
+
+```{r}
+plot_mod <- glm(data = fecunddat, Estimated_fecundity ~ Carapace_width, family = gaussian(link = "log"))
+t1 <- qresid(plot_mod)
+qqnorm(t1)
+abline(0, 1, col = "red")
+
+hist(plot_mod$residuals, main = "log-link residuals")
+
+```
+
+
+# Egg Size x Body Size * Developmental Bins
+
+
+```{r egg size and carapace width}
+
+library(ggpirate)
+fecunddat %>% 
+  ggplot(aes(x = es_bins, y = egg_volume, color = egg_volume, fill = egg_volume)) +
+  geom_pirate(bars = FALSE) +
+  labs(
+    x = "Egg Development Stage",
+    y = "Egg Volume"
+  )
+```
+
+### Anova - Egg Development
+
+```{r}
+anova_mod <- lm(egg_volume ~ es_bins, data = fecunddat)
+anova(anova_mod)
+```
+
