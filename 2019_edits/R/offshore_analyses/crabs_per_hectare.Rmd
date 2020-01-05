@@ -1,0 +1,100 @@
+---
+title: "Offshore Crabs/Hectare Modeling"
+---
+title: "Offshore Indices of Abundance for <br/> Blue Crabs"
+author: "Adam A Kemberling"
+date: "1/4/2020"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+#packages
+library(MASS)
+library(here)
+library(tidyverse)
+library(knitr)
+library(emmeans)
+library(patchwork)
+library(broom)
+library(statmod)
+library(sf)
+conflicted::conflict_prefer("select", "dplyr")
+conflicted::conflict_prefer("filter", "dplyr")
+
+
+#Format ggplot for rest of document
+theme_set(theme_bw() + theme(panel.grid.major = element_blank(), 
+                             panel.grid.minor = element_blank(), 
+                             panel.border = element_rect(fill = NA)))
+
+`%not in%` <- purrr::negate(`%in%`)
+```
+
+
+
+```{r data}
+seamap <- read_csv("~/Dropbox/SEAMAP_2019/data/offshore/seamap_cpue_2019.csv",
+                   guess_max = 1e6, 
+                   col_types = cols())
+
+#Set up Season Column, using survey titles
+seamap[str_detect(seamap$TITLE, "Fall"),"Season"] <- "Fall"
+seamap[str_detect(seamap$TITLE, "Winter"),"Season"] <- "Winter"
+seamap[str_detect(seamap$TITLE, "Summer"),"Season"] <- "Summer"
+seamap[str_detect(seamap$TITLE, "Spring"),"Season"] <- "Spring"
+
+# Make any setup changes
+seamap <- seamap %>% 
+  mutate(STAT_ZONE     = factor(STAT_ZONE),
+         Crab_presence = ifelse(Sapidus_Catch > 0, 1, 0),
+         Survey_Year   = as.numeric(Survey_Year),
+         Season        = factor(Season, levels = c("Summer","Fall","Winter")),
+         Survey_Month  = lubridate::month(Date),
+         Survey_Month  = factor(Survey_Month),
+         Survey_design = ifelse(Survey_Year < 2009, "Old Design", "Current Design"),
+         Survey_design = ifelse(Survey_Year == 2008 & Season == "Fall", "Current Design", Survey_design),
+         Survey_design = factor(Survey_design, levels = c("Old Design", "Current Design")),
+         ####  More changes from DE
+         Year_f             =  factor(Survey_Year),
+         Month_f            =  factor(Survey_Month),
+         Depth              =  (Start_Depth + End_Depth)/2,
+         Temp_std           =  (Temp_B- mean(Temp_B))/ mean(Temp_B),
+         Salinity_std       =  (Salinity_B- mean(Salinity_B))/ mean(Salinity_B),
+         Depth_std          =  (Depth- mean(Depth))/ mean(Depth))
+
+
+# Do all filtering
+seamap <- seamap %>% 
+  filter(Season            !=  "Winter",
+         Survey_Year     %in%  c(2000:2018),
+         Spd_kmh           !=  0,                    #these are infinite cpue
+         Depth             <=  110)
+
+
+
+# Catch only set
+crabs <- seamap %>% filter(Sapidus_Catch > 0)
+
+crabs %>% 
+  mutate(STAT_ZONE = fct_rev(STAT_ZONE)) %>% 
+  ggplot(aes(STAT_ZONE, Sapidus_Catch)) + 
+  geom_boxplot(aes(group = STAT_ZONE)) + 
+  labs(title    = "Blue Crab Catch by Stat Zone", 
+       subtitle = "Stat zones ordered West to East - 2000 to 2018", 
+       x        = "Statistical Zone",
+       y        = "C. sapidus Single Station Catch") +
+  facet_wrap(~Survey_design)
+
+
+overall_mean <- mean(seamap$Sapidus_Catch, na.rm = T)
+percent_zeros <- seamap %>% filter(Sapidus_Catch == 0) %>% count()
+station_count <- seamap %>% count()
+```
+

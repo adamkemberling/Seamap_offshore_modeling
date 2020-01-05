@@ -21,6 +21,7 @@ library(tidyverse)
 library(knitr)
 library(emmeans)
 library(gridExtra)
+library(patchwork)
 library(broom)
 library(statmod)
 library(rnaturalearth)
@@ -58,7 +59,8 @@ There was an initial concern with abnormally high catch values being potential m
 ```{r}
 # Read in data
 #seamap <- read_csv(here("data_processed/gsmfc_processed", "seamap_cpue_2019.csv"),
-seamap <- read_csv(here("data/offshore", "seamap_cpue_2019.csv"),
+#seamap <- read_csv(here("data/offshore", "seamap_cpue_2019.csv"),
+seamap <- read_csv("~/Dropbox/SEAMAP_2019/data/offshore/seamap_cpue_2019.csv",
                    guess_max = 1e6, 
                    col_types = cols())
 
@@ -198,7 +200,7 @@ year_plot_1 <- year_sums %>%
 
 
 year_plot_1
-#ggsave(plot =  year_plot_1, here("figures", "yearly_catch.png"), dpi = 600)
+#ggsave(plot =  year_plot_1, here("2019_edits/figures", "yearly_catch.png"), dpi = 600)
 
 ```
 
@@ -221,7 +223,7 @@ year_plot_2 <- year_sums %>%
   theme(axis.text.x = element_text(angle = 45, vjust = 0.5))
 
 year_plot_2
-#ggsave(plot = year_plot_2, here("figures", "yearly_occurrence.png"), dpi = 600)
+#ggsave(plot = year_plot_2, here("2019_edits/figures", "yearly_occurrence.png"), dpi = 600)
 
 ```
 
@@ -231,9 +233,7 @@ year_plot_2
 ### Yearly Side-by
 
 ```{r}
-gridExtra::grid.arrange(
-  grobs = list(year_plot_1, year_plot_2),
-  nrow = 1)
+year_plot_1 + year_plot_2
 ```
 
 
@@ -245,7 +245,7 @@ gridExtra::grid.arrange(
 ```{r}
 #Assign Stat Zone from NMFS grid
 #szones <- read_sf(here("GIS_objects",  "NMFS_Fishing_Grids_GOM_2013", "NMFS_Fishing_Grids_GOM_2013.shp"), crs = 4326)
-szones <- read_sf(here("data/gis_files","NMFS_Fishing_Grids_GOM_2013.shp"), crs = 4326)
+szones <- read_sf("~/Dropbox/SEAMAP_2019/data/gis_files/NMFS_Fishing_Grids_GOM_2013.shp", crs = 4326)
 
 # Add a better StatZone ID by spatial overlap
 seamap <- seamap %>% 
@@ -310,7 +310,7 @@ szones_plot_1 <- szone_summary %>%
 
 
 szones_plot_1 
-#ggsave(plot = szones_plot_1, here("figures", "statzones_catch.png"), dpi = 600)
+#ggsave(plot = szones_plot_1, here("2019_edits/figures", "statzones_catch.png"), dpi = 600)
 
 ```
 
@@ -337,7 +337,7 @@ szones_plot_2 <- szone_summary %>%
        y = "Percent Occurrence")
 
 szones_plot_2
-#ggsave(plot = szones_plot_2, here("figures", "statzones_occurrence.png"), dpi = 600)
+#ggsave(plot = szones_plot_2, here("2019_edits/figures", "statzones_occurrence.png"), dpi = 600)
 ```
 
 
@@ -347,9 +347,7 @@ szones_plot_2
 ### Stat Zone Side-by
 
 ```{r}
-gridExtra::grid.arrange(
-  grobs = list(szones_plot_1, szones_plot_2),
-  nrow = 1)
+szones_plot_1 + szones_plot_2
 ```
 
 
@@ -373,7 +371,9 @@ seamap <- seamap %>%
     )
 
 #Output seamap analysis file
-write_csv(seamap, here::here("data/offshore", "seamap_cpue_2019_analysis.csv"), 
+write_csv(seamap, 
+          "~/Dropbox/SEAMAP_2019/data/offshore/seamap_cpue_2019_analysis.csv", 
+          #here::here("data/offshore", "seamap_cpue_2019_analysis.csv"), 
           col_names = TRUE)
 
 region_summary <- seamap %>% 
@@ -423,7 +423,7 @@ region_plot_1 <- region_summary %>%
 
 
 region_plot_1 
-#ggsave(plot = region_plot_1, here("figures", "regions_catch.png"), dpi = 600)
+#ggsave(plot = region_plot_1, here("2019_edits/figures", "regions_catch.png"), dpi = 600)
 ```
 
 ***
@@ -449,7 +449,7 @@ region_plot_2 <- region_summary %>%
        y = "Percent Occurrence")
 
 region_plot_2
-#ggsave(plot = region_plot_2, here("figures", "regions_occurrence.png"), dpi = 600)
+#ggsave(plot = region_plot_2, here("2019_edits/figures", "regions_occurrence.png"), dpi = 600)
 
 ```
 
@@ -458,9 +458,7 @@ region_plot_2
 ### Regional Side-by
 
 ```{r}
-gridExtra::grid.arrange(
-  grobs = list(region_plot_1, region_plot_2),
-  nrow = 1)
+region_plot_1 + region_plot_2
 ```
 
 
@@ -564,9 +562,7 @@ rs_plot_2
 
 ```{r}
 
-gridExtra::grid.arrange(
-  grobs = list(rs_plot_1 + theme(legend.position = "none"), rs_plot_2),
-  nrow = 1)
+rs_plot_1 + theme(legend.position = "none") + rs_plot_2
 
 ```
 
@@ -602,7 +598,7 @@ season_summary <- seamap %>%
            occurrence_ymin    = ifelse(occurrence_ymin < 0, 0, occurrence_ymin)
          )
 
-season_summary%>% select(Survey_Year, Season, Stations, `Missing Obs`, `% Occurrence`, `Mean Catch`, SD, Overdispersed) %>% knitr::kable()
+season_summary %>% select(Survey_Year, Season, Stations, `Missing Obs`, `% Occurrence`, `Mean Catch`, SD, Overdispersed) %>% knitr::kable()
 #knitr::kable(season_summary)
 ```
 
@@ -632,7 +628,7 @@ season_plot_1 <- season_summary %>%
 
 
 season_plot_1 
-#ggsave(plot =  year_plot_1, here("figures", "yearly_catch.png"), dpi = 600)
+#ggsave(plot =  year_plot_1, here("2019_edits/figures", "yearly_catch.png"), dpi = 600)
 
 
 ```
@@ -673,9 +669,7 @@ season_plot_2
 ### Seasonal Side-by
 
 ```{r}
-gridExtra::grid.arrange(
-  grobs = list(season_plot_1 + theme(legend.position = "none"), season_plot_2),
-  nrow = 1)
+season_plot_1 + theme(legend.position = "none") + season_plot_2
 ```
 
 
@@ -705,7 +699,7 @@ super_plot_tall <- grid.arrange(
                season_plot_1, season_plot_2+ ylab(""),
                szones_plot_1, szones_plot_2+ ylab("")), 
   nrow = 3)
-super_plot_tall
+#super_plot_tall
 ```
 
 ### 3x2 B.
@@ -718,7 +712,7 @@ super_plot_wide <- grid.arrange(
   nrow = 2
 )
 
-super_plot_wide
+#super_plot_wide
 ```
 
 # Index of Abundance
