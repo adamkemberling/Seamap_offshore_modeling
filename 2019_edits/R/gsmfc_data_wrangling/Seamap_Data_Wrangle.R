@@ -3,16 +3,22 @@
 
 #Packages
 library(tidyverse)
-library(here)
+#library(here)
 
 
 #Data import, data uploaded from GSMFC March 23, 2019
-BGSREC <- read_csv(here("GSMFC_data_raw", "BGSREC.csv"),col_types = cols())
-ENVREC <- read_csv(here("GSMFC_data_raw", "ENVREC.csv"), col_types = cols())
-CRUISES <- read_csv(here("GSMFC_data_raw", "CRUISES.csv"), col_types = cols()) 
-STAREC <- read_csv(here("GSMFC_data_raw", "STAREC.csv"), col_types = cols())
-INVREC <- read_csv(here("GSMFC_data_raw", "INVREC.csv"), col_types = cols())
-# GLFREC <- read_csv("~/Documents/KrackN/Seamap_man/GSMFC_data/GLFREC.csv", guess_max = 10e6, col_types = cols())  #GLFREC has SEX of catch
+BGSREC <- read_csv("/Users/adamkemberling/Dropbox (The Craboratory)/SEAMAP_2019/data/GSMFC_raw/BGSREC.csv", 
+                   col_types = cols(), guess_max = 1e5)
+ENVREC <- read_csv("/Users/adamkemberling/Dropbox (The Craboratory)/SEAMAP_2019/data/GSMFC_raw/ENVREC.csv", 
+                   col_types = cols(), guess_max = 1e5)
+CRUISES <- read_csv("/Users/adamkemberling/Dropbox (The Craboratory)/SEAMAP_2019/data/GSMFC_raw/CRUISES.csv", 
+                    col_types = cols(), guess_max = 1e5)
+STAREC <- read_csv("/Users/adamkemberling/Dropbox (The Craboratory)/SEAMAP_2019/data/GSMFC_raw/STAREC.csv", 
+                   col_types = cols(), guess_max = 1e5)
+INVREC <- read_csv("/Users/adamkemberling/Dropbox (The Craboratory)/SEAMAP_2019/data/GSMFC_raw/INVREC.csv", 
+                   col_types = cols(), guess_max = 1e5)
+# GLFREC <- read_csv("/Users/adamkemberling/Dropbox (The Craboratory)/SEAMAP_2019/data/GSMFC_raw/GLFREC.csv", 
+                   # col_types = cols(), guess_max = 1e5)  #GLFREC has SEX of catch
 
 # #Data Cleanup, GLFREC has weight and length info of individuals
 # names(GLFREC)
@@ -122,8 +128,8 @@ nrow(catch.fix)
 
 
 #combine rows of cal and other stations, remove rows that dont match stationid
-station_id <- c(other.stations$STATIONID,row.fix$STATIONID)
-catch <- c(other.stations$COUNT,row.fix$COUNT)
+station_id    <- c(other.stations$STATIONID,row.fix$STATIONID)
+catch         <- c(other.stations$COUNT,row.fix$COUNT)
 station.catch <- data.frame("STATIONID" = station_id, "Sapidus_Catch" = catch)
 summary(station.catch$Sapidus_Catch)
 
@@ -144,9 +150,9 @@ tail(all.info)
 #write_csv(seamap_merge, '~/Documents/KrackN/Seamap_man/Historic_cleaned/seamap_catchdata.csv')
 #write_csv(all.info, '~/Documents/KrackN/Seamap_man/Historic_cleaned/seamap_sapidus_consolidation_2018.csv')
 
-#New (2019) project directory
-write_csv(trawl.info, here("data_processed/gsmfc_processed", "seamap_trawlinfo.csv"))
-write_csv(seamap_merge, here("data_processed/gsmfc_processed", "seamap_catchdata.csv"))
-write_csv(all.info, here("data_processed/gsmfc_processed", "seamap_sapidus_consolidation_2019.csv"))
+# #New (2019) project directory
+# write_csv(trawl.info, here("data_processed/gsmfc_processed", "seamap_trawlinfo.csv"))
+# write_csv(seamap_merge, here("data_processed/gsmfc_processed", "seamap_catchdata.csv"))
+# write_csv(all.info, here("data_processed/gsmfc_processed", "seamap_sapidus_consolidation_2019.csv"))
 
 #push test
