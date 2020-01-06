@@ -22,7 +22,7 @@ theme_set(theme_bw() + theme(panel.grid.major = element_blank(), panel.grid.mino
 
 #Load and clean up data - from IOA_report
 # Read in data
-seamap <- read_csv(here("data_processed/gsmfc_processed", "seamap_cpue_2019.csv"),
+seamap <- read_csv("~/Dropbox/SEAMAP_2019/data/offshore/seamap_cpue_2019.csv",
                    guess_max = 1e6, 
                    col_types = cols())
 
@@ -234,5 +234,7 @@ grid.arrange(p5, p6, ncol = 2)
 # Include the number of observations, mean, and standard deviation
 
 
-#The plumber package has a function for these frequency tables, I don't remember what it is called though
-library(plumber)
+#The janitor package has a function for these frequency tables, I don't remember what it is called though
+library(janitor)
+tabyl(seamap, STAT_ZONE, Survey_design) %>% adorn_title() %>% kable()
+
