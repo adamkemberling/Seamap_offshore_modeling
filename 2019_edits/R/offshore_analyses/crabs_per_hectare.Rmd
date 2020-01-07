@@ -696,9 +696,8 @@ super_plot_wide <- grid.arrange(
 # Crab/hectare Models
 
 
-## Tweedie Models {.tabset .tabset-pills}
+## NEgbin w/ Offset {.tabset .tabset-pills}
 
-Tweedie distributions are similar to a negative-binomial in their application for datasets that exhibit zero inflation. Tweedie models are applicable in cases where the response is continuous i.e. catch/area.
 
 ### Model 1a. 2000-2018 w/ interaction
 
@@ -708,16 +707,17 @@ This model uses crabs per hectare as the response over the period of 18 years (2
 seamap <- seamap %>% rename_all(tolower)
 seamap_west <- seamap %>% 
   filter(statzone != 12,
-         statzone %in% 11:21)
+         statzone %in% 11:21) %>% 
+  mutate(statzone = factor(statzone))
 
-mod1a <- glm(cpue_towspd ~ year_f + region + season + survey_design +  #Additive covariates
-            year_f * region,                                           #Interaction terms
-            family = tweedie(),
+mod1a <- MASS:::glm.nb(sapidus_catch ~ year_f + region + season +   #Additive covariates
+            year_f * region + 
+            offset(log(area_hectares)),
             data = seamap_west)
 
-# summary(mod1a)
-# 
-# emmeans::emmip(mod1a, region ~ year_f) 
+summary(mod1a)
+
+emmeans::emmip(mod1a, region ~ year_f)
 ```
 
 #### Model Summary
@@ -732,36 +732,33 @@ tidy(mod1a) %>%
 
 ```{r}
 broom::glance(mod1a) %>% kable()
+
+#Percent deviance explained
+(mod1a$null.deviance - mod1a$deviance) / mod1a$null.deviance
 ```
 
 ##### CPUE Timeline
 
 ```{r}
-#Predicted abundance dataframe
-mod1a.dat <- emmeans(mod1a, 
-                        specs = "year_f" , 
-                        by    = "region", 
-                        type  = "response") %>% 
-  as.data.frame()
+
+#Estimated Marginal Means with an offset
+#parameter in the call of offset = 0:
+mod1a.dat <- as.data.frame(emmeans(mod1a, 
+                                  specs = "year_f", 
+                                  by    = "region",
+                                  type  = "response", 
+                                  offset = 0))
+mod1a.dat$CV <- nbemeans$SE/nbemeans$response
 
 
-#Try this
-emm <- update(emmeans(m1, "am"), tran = "log")
-summary(emm, type = "response")
 
 
 
-#Standardize to mean
-mean_pred <- mean(mod1a.dat$response)
-mod1a.dat <- mod1a.dat %>% mutate(Std_Index = response/mean_pred,
-                                CV = SE/response,
-                                LCI = asymp.LCL/mean_pred,
-                                UCI = asymp.UCL/mean_pred,
-                                Year_n = as.numeric(as.character(year_f)))
+
 
 #make scale_x_discrete breaks b/c ggplot is dumb
-ystart <- min(as.numeric(seamap$survey_year))
-yend   <- max(as.numeric(seamap$survey_year))
+ystart <- min(as.numeric(seamap_west$survey_year))
+yend   <- max(as.numeric(seamap_west$survey_year))
 ynames <- lubridate::year(seq.Date(as.Date(paste(ystart), "%Y"), 
                    as.Date(paste(yend), "%Y"), 
                    by = "year"))
@@ -770,13 +767,17 @@ ynames <- lubridate::year(seq.Date(as.Date(paste(ystart), "%Y"),
 
 #ggplot of standardized index of abundance
 p <- mod1a.dat %>% 
-  ggplot(aes(year_f, response)) +
-      geom_ribbon(aes(Year_n, ymin = asymp.LCL, ymax = asymp.UCL), fill = "gray80") +
-      geom_line(aes(Year_n, response, group = 1)) +
-      geom_point(aes(Year_n, response)) +
-      geom_hline(aes(yintercept = 0), color = "darkred", linetype = 2) +
+  mutate(year_n = as.numeric(as.character(year_f))) %>% 
+  ggplot(aes(year_n, response)) +
+      geom_ribbon(aes(year_n, ymin = asymp.LCL, ymax = asymp.UCL), fill = "gray80") +
+      geom_line(aes(year_n, response, group = 1)) +
+      geom_point(aes(year_n, response)) +
+      geom_hline(aes(yintercept = mean(seamap_west$cpue_towspd)), color = "darkred", linetype = 2) +
       scale_x_discrete(limits = c(as.numeric(ystart:yend)), labels = ynames) +
-      xlab("") + ylab("Crabs per Hectare") +
+      labs(
+        x = NULL, 
+        y = "Crabs per Hectare",
+        caption = "Red dashed line is the grand mean of crabs/hectare, representing the null model.") +
       theme(axis.text.x=element_text(angle=45, hjust = 1, vjust=1), legend.position = "bottom") +
       facet_wrap(~region)
 p
@@ -784,8 +785,29 @@ p
 emmeans(mod1a, specs = "year_f", by = c("region", "season", "survey_design"))
 ```
 
+### Observed vs. Predicted
 
-## Negative Binomial Models {.tabset .tabset-fade .tabset-pills}
+Model prediction (black) & observed mean values (blue), both standardized by overall mean
+
+```{r}
+#Observed data
+mean_obs <- mean(seamap$Sapidus_Catch)
+obs_timeline <- seamap %>% 
+  group_by(Survey_Year) %>% 
+  summarise(Nobs = n(),
+            PercentPos = mean(Crab_presence),
+            Mean_Catch = mean(Sapidus_Catch)) %>% 
+  mutate(Index_Obs = Mean_Catch/mean_obs)
+ 
+
+#Plot again with observed data set on top in blue 
+p + geom_line(data = obs_timeline, 
+              aes(Survey_Year, Index_Obs, group = 1), 
+              col = "royalblue", linetype = 2) +
+    geom_point(data = obs_timeline, 
+               aes(Survey_Year, Index_Obs), col = "royalblue") +
+  labs(title = "Model Estimates and Yearly observed means")
+```
 
 
 
