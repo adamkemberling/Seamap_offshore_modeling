@@ -1,5 +1,7 @@
 ---
 title: "Offshore Crabs/Hectare Modeling"
+editor_options: 
+  chunk_output_type: console
 ---
 title: "Offshore Indices of Abundance for <br/> Blue Crabs"
 author: "Adam A Kemberling"
@@ -282,6 +284,7 @@ szones_plot_1
 
 ```
 
+
 ***
 
 ### Stat Zone Frequency of Occurrence
@@ -311,12 +314,12 @@ szones_plot_2
 
 ***
 
-
-### Stat Zone Side-by
+###  Stat Zone Side-by
 
 ```{r}
 szones_plot_1 + szones_plot_2
 ```
+
 
 
 ***
@@ -408,11 +411,6 @@ region_plot_2 <- region_summary %>%
                       ymin = occurrence_ymin,
                       ymax = occurrence_ymax),
                   size = .25) +
-  # geom_vline(xintercept = 11.5, color = "gray", lty = 2) +
-  # geom_vline(xintercept = 4.5, color = "gray", lty = 2) +
-  # annotate(geom = "text", x = 16.5, y = 0.75, label = "East of Mobile Bay") +
-  # annotate(geom = "text", x = 8, y = 0.75, label = "LA & MS") +
-  # annotate(geom = "text", x = 2.5, y = 0.75, label = "Texas") +
   scale_y_continuous(labels = scales::percent, limits = c(0,1)) + 
   labs(x = "Sampling Region",
        y = "Percent Occurrence")
@@ -478,7 +476,7 @@ rs_plot_1 <- rs_summary %>%
     geom_col(position = "dodge") +
     geom_errorbar(aes(ymin = catch_ymin,
                       ymax = catch_ymax),
-                  position = "dodge",
+                  position = "dodge", 
                   size = .25) +
   scale_fill_manual(name = "", values = setNames(c("gray35", "gray50"), c("Summer", "Fall"))) +
   labs(x = "Survey Year",
@@ -646,62 +644,15 @@ season_plot_1 + theme(legend.position = "none") + season_plot_2
 
 ***
 
-## Combining Figures {.tabset .tabset-fade .tabset-pills}
 
-### 1x2
-
-```{r, message = FALSE, warning = FALSE, comment = NA}
-year_plots <- grid.arrange(grobs = list(year_plot_1 + xlab(""), year_plot_2), nrow = 2, ncol = 1)
-year_plots
-season_plots <- grid.arrange(grobs = list(season_plot_1 + xlab(""), season_plot_2), nrows = 2, ncol = 1)
-season_plots
-szone_plots <- grid.arrange(grobs = list(szones_plot_1 + xlab(""), szones_plot_2), nrows = 2, ncol = 1)
-szone_plots
-
-```
+# Crab/hectare Models {.tabset .tabset-pills}
 
 
-### 3x2 A.
-
-
-```{r, message = FALSE, warning = FALSE, comment = NA, fig.height=8}
-super_plot_tall <- grid.arrange(
-  grobs = list(year_plot_1, 
-               year_plot_2 + ylab(""),
-               season_plot_1, 
-               season_plot_2 + ylab(""),
-               szones_plot_1, 
-               szones_plot_2 + ylab("")), 
-  nrow = 3)
-#super_plot_tall
-```
-
-### 3x2 B.
-
-```{r, message = FALSE, warning = FALSE, comment = NA, fig.height=8}
-
-super_plot_wide <- grid.arrange(
-  grobs = list(year_plot_1 + xlab(""), 
-               season_plot_1 + xlab("") + ylab(""), 
-               szones_plot_1 + xlab("") + ylab(""),
-               year_plot_2,            
-               season_plot_2 + ylab(""), 
-               szones_plot_2 + ylab("")),
-  nrow = 2
-)
-
-#super_plot_wide
-```
-
-# Crab/hectare Models
-
-
-## NEgbin w/ Offset {.tabset .tabset-pills}
-
-
-### Model 1a. 2000-2018 w/ interaction
+## Model A. 2000-2018 w/ interaction
 
 This model uses crabs per hectare as the response over the period of 18 years (2000-2018). Data is limited to statzones that were consistently sampled over the time period (i.e. West of Mobile Bay).
+
+Model is a generalized linear model with a negative binomial error distribution. Blue crab catch is predicted as the sum of linear predictors for the year and season when the station was sampled in addition to the region in which it took place, with an interaction between survey year and region. An offset of area towed in hectares was used to predict catch as a rate and account for differences in sampling effort at different stations.
 
 ```{r}
 seamap <- seamap %>% rename_all(tolower)
@@ -715,12 +666,33 @@ mod1a <- MASS:::glm.nb(sapidus_catch ~ year_f + region + season +   #Additive co
             offset(log(area_hectares)),
             data = seamap_west)
 
-summary(mod1a)
-
-emmeans::emmip(mod1a, region ~ year_f)
+#summary(mod1a)
 ```
 
-#### Model Summary
+### Interaction Plot
+
+Looking at an interaction plot indicates that the impact of each region is not consistent across years and that there is an important interaction in the data.
+
+```{r}
+emmeans::emmip(mod1a, region ~ year_f) +
+  labs(title = "Interaction Plot: year * region",
+       caption = "criss-crossing of estimates is subjective indication of interaction",
+       x = NULL) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5))
+```
+
+### Model Summary
+
+Understanding p-values in glm model summary. Using the default settings in R sets the contrast levels for factors such that all factors are contrasted against the first/lowest factor level.
+
+For example in our model year is modeled as a factor, which adjusts the intercept for the model for each. The first year is 2000, so all other years are contrasted against that year's mean estimate. One quick way to confirm what factor level is the contrast is y checking which levels are absent from the summary table `summary(my_model)`
+
+Contrasts:   
+year = 2000   
+region = texas   
+season = summer   
+
+P-values on factor levels in these tables indicate significant deviation from the contrasts. Post-hoc tests are necessary to compare individual levels against one another.
 
 ```{r}
 tidy(mod1a) %>% 
@@ -728,16 +700,30 @@ tidy(mod1a) %>%
   kable()
 ```
 
-#### Fit Diagnostics
+### Fit Diagnostics - Deviance
+
+
 
 ```{r}
 broom::glance(mod1a) %>% kable()
 
 #Percent deviance explained
-(mod1a$null.deviance - mod1a$deviance) / mod1a$null.deviance
+perc_dev <- (mod1a$null.deviance - mod1a$deviance) / mod1a$null.deviance
 ```
 
-##### CPUE Timeline
+Goodness of fit for generalized linear models is described using deviance. A glm will report 2 deviance measures: 
+
+`null.deviance` is the residual variation remaining from the null model. The null model here is the grand mean of blue crab catch per hectare of all observations
+
+`deviance` is the residual variation remaining from the fitted model. Numbers closer to the null.deviance indicate that the model did not perform much better than the null model.
+
+`% deviance explained` is calculated as $\frac{null.deviance - deviance}{null.deviance} * 100$ and expresses the improvement of the fitted model over the null in % deviance explained.
+
+Percent Deviance for model 1a. = `r perc_dev`
+
+#### CPUE Timeline
+
+Because we used area towed in the model as an offset predictions from our model can be interprated as crabs per hectare.
 
 ```{r}
 
@@ -748,7 +734,7 @@ mod1a.dat <- as.data.frame(emmeans(mod1a,
                                   by    = "region",
                                   type  = "response", 
                                   offset = 0))
-mod1a.dat$CV <- nbemeans$SE/nbemeans$response
+mod1a.dat$CV <- mod1a.dat$SE/mod1a.dat$response
 
 
 
@@ -776,40 +762,236 @@ p <- mod1a.dat %>%
       scale_x_discrete(limits = c(as.numeric(ystart:yend)), labels = ynames) +
       labs(
         x = NULL, 
-        y = "Crabs per Hectare",
-        caption = "Red dashed line is the grand mean of crabs/hectare, representing the null model.") +
+        y = "Crabs per Hectare") +
       theme(axis.text.x=element_text(angle=45, hjust = 1, vjust=1), legend.position = "bottom") +
       facet_wrap(~region)
 p
 
-emmeans(mod1a, specs = "year_f", by = c("region", "season", "survey_design"))
 ```
 
-### Observed vs. Predicted
+### Observed vs. Predicted, all model factors
 
 Model prediction (black) & observed mean values (blue), both standardized by overall mean
 
 ```{r}
-#Observed data
-mean_obs <- mean(seamap$Sapidus_Catch)
-obs_timeline <- seamap %>% 
-  group_by(Survey_Year) %>% 
-  summarise(Nobs = n(),
-            PercentPos = mean(Crab_presence),
-            Mean_Catch = mean(Sapidus_Catch)) %>% 
-  mutate(Index_Obs = Mean_Catch/mean_obs)
- 
 
-#Plot again with observed data set on top in blue 
-p + geom_line(data = obs_timeline, 
-              aes(Survey_Year, Index_Obs, group = 1), 
+#Estimated Marginal Means with an offset
+#parameter in the call of offset = 0:
+mod1a.dat <- as.data.frame(emmeans(mod1a, 
+                                  specs = "year_f", 
+                                  by    = c("region", "season"),
+                                  type  = "response", 
+                                  offset = 0))
+mod1a.dat$CV <- mod1a.dat$SE/mod1a.dat$response
+
+
+#Observed data
+mean_obs <- mean(seamap_west$cpue_towspd)
+obs_timeline <- seamap_west %>% 
+  group_by(survey_year, region, season) %>% 
+  summarise(Nobs = n(),
+            PercentPos = mean(crab_presence),
+            Mean_CPUE = mean(cpue_towspd)) %>% 
+  mutate(Index_Obs = Mean_CPUE/mean_obs)
+
+
+
+
+
+#ggplot of standardized index of abundance
+p <- mod1a.dat %>% 
+  mutate(year_n = as.numeric(as.character(year_f))) %>% 
+  ggplot(aes(year_n, response)) +
+      #Fitted Data
+      geom_ribbon(aes(year_n, ymin = asymp.LCL, ymax = asymp.UCL), fill = "gray80") +
+      geom_line(aes(year_n, response, group = 1)) +
+      geom_point(aes(year_n, response)) +
+      # Observed Data
+      geom_line(data = obs_timeline, 
+              aes(survey_year, Mean_CPUE, group = region), 
               col = "royalblue", linetype = 2) +
-    geom_point(data = obs_timeline, 
-               aes(Survey_Year, Index_Obs), col = "royalblue") +
-  labs(title = "Model Estimates and Yearly observed means")
+      geom_point(data = obs_timeline, 
+                 aes(survey_year, Mean_CPUE, group = region), col = "royalblue") +
+      #Theme changes
+      scale_x_discrete(limits = c(as.numeric(ystart:yend)), labels = ynames) +
+      labs(
+        x = NULL, 
+        y = "Crabs per Hectare",
+        title = "Model Estimates and Yearly observed means") +
+      theme(axis.text.x=element_text(angle=45, hjust = 1, vjust=1), legend.position = "bottom") +
+      facet_grid(season~region)
+p
+
 ```
 
 
 
+## Model B. 2009-2018 
+
+This model uses crabs per hectare as the response over the period of 9 years (2009-2018). Data selection and sampling effort was consistent over this period. Additionally the survey expanded to the Eastern Gulf of Mexico so stat zones in that region are included as well.
+
+Model is a generalized linear model with a negative binomial error distribution. Blue crab catch is predicted as the sum of linear predictors for the year and season when the station was sampled in addition to the region in which it took place, with an interaction between survey year and region. An offset of area towed in hectares was used to predict catch as a rate and account for differences in sampling effort at different stations.
 
 
+```{r}
+seamap_east <- seamap %>% 
+  filter(statzone != 12,
+         statzone != 1,
+         survey_year %in% 2009:2018) %>% 
+  mutate(statzone = factor(statzone))
+
+modb <- MASS:::glm.nb(sapidus_catch ~ year_f + region + season +   #Additive covariates
+            year_f * region + 
+            offset(log(area_hectares)),
+            data = seamap_east)
+
+#summary(modb)
+```
+
+### Interaction Plot
+
+Looking at an interaction plot indicates that the impact of each region is not consistent across years and that there is an important interaction in the data. The sharp peaks for Florida's linear predictor reflect years when there was no catch.
+
+```{r}
+emmeans::emmip(modb, region ~ year_f) +
+  labs(title = "Interaction Plot: year * region",
+       caption = "criss-crossing of estimates is subjective indication of interaction",
+       x = NULL) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5))
+```
+
+### Model Summary
+
+
+```{r}
+tidy(modb) %>% 
+  mutate(`signif.` = ifelse(p.value <= .05, "*", "")) %>% 
+  kable()
+```
+
+### Fit Diagnostics - Deviance
+
+
+```{r}
+broom::glance(modb) %>% kable()
+
+#Percent deviance explained
+perc_dev <- (modb$null.deviance - modb$deviance) / modb$null.deviance
+```
+
+Goodness of fit for generalized linear models is described using deviance. A glm will report 2 deviance measures: 
+
+`null.deviance` is the residual variation remaining from the null model. The null model here is the grand mean of blue crab catch per hectare of all observations
+
+`deviance` is the residual variation remaining from the fitted model. Numbers closer to the null.deviance indicate that the model did not perform much better than the null model.
+
+`% deviance explained` is calculated as $\frac{null.deviance - deviance}{null.deviance} * 100$ and expresses the improvement of the fitted model over the null in % deviance explained.
+
+Percent Deviance for model 1a. = `r perc_dev`
+
+#### CPUE Timeline
+
+Because we used area towed in the model as an offset predictions from our model can be interprated as crabs per hectare.
+
+```{r}
+
+#Estimated Marginal Means with an offset
+#parameter in the call of offset = 0:
+modb.dat <- as.data.frame(emmeans(modb, 
+                                  specs = "year_f", 
+                                  by    = "region",
+                                  type  = "response", 
+                                  offset = 0))
+modb.dat$CV <- modb.dat$SE/modb.dat$response
+
+
+
+
+
+
+
+#make scale_x_discrete breaks b/c ggplot is dumb
+ystart <- min(as.numeric(seamap_east$survey_year))
+yend   <- max(as.numeric(seamap_east$survey_year))
+ynames <- lubridate::year(seq.Date(as.Date(paste(ystart), "%Y"), 
+                   as.Date(paste(yend), "%Y"), 
+                   by = "year"))
+
+
+
+#ggplot of standardized index of abundance
+p <- modb.dat %>% 
+  mutate(year_n = as.numeric(as.character(year_f))) %>% 
+  ggplot(aes(year_n, response)) +
+      geom_ribbon(aes(year_n, ymin = asymp.LCL, ymax = asymp.UCL), fill = "gray80") +
+      geom_line(aes(year_n, response, group = 1)) +
+      geom_point(aes(year_n, response)) +
+      geom_hline(aes(yintercept = mean(seamap_east$cpue_towspd)), color = "darkred", linetype = 2) +
+      scale_x_discrete(limits = c(as.numeric(ystart:yend)), labels = ynames) +
+      labs(
+        x = NULL, 
+        y = "Crabs per Hectare") +
+      theme(axis.text.x=element_text(angle=45, hjust = 1, vjust=1), legend.position = "bottom") +
+      facet_wrap(~region)
+p
+
+```
+
+### Observed vs. Predicted, all model factors
+
+Model prediction (black) & observed mean values (blue), both standardized by overall mean
+
+```{r}
+
+#Estimated Marginal Means with an offset
+#parameter in the call of offset = 0:
+modb.dat <- as.data.frame(emmeans(modb, 
+                                  specs = "year_f", 
+                                  by    = c("region", "season"),
+                                  type  = "response", 
+                                  offset = 0))
+modb.dat$CV <- modb.dat$SE/modb.dat$response
+
+#Drop Infinite credibility intervals
+modb.dat <- modb.dat %>% 
+  mutate(asymp.UCL = ifelse(asymp.UCL == Inf, NA, asymp.UCL))
+
+
+#Observed data
+mean_obs <- mean(seamap_east$cpue_towspd)
+obs_timeline <- seamap_east %>% 
+  group_by(survey_year, region, season) %>% 
+  summarise(Nobs = n(),
+            PercentPos = mean(crab_presence),
+            Mean_CPUE = mean(cpue_towspd)) %>% 
+  mutate(Index_Obs = Mean_CPUE/mean_obs)
+
+
+
+
+
+#ggplot of standardized index of abundance
+p <- modb.dat %>% 
+  mutate(year_n = as.numeric(as.character(year_f))) %>% 
+  ggplot(aes(year_n, response)) +
+      #Fitted Data
+      geom_ribbon(aes(year_n, ymin = asymp.LCL, ymax = asymp.UCL), fill = "gray80") +
+      geom_line(aes(year_n, response, group = 1)) +
+      geom_point(aes(year_n, response)) +
+      # Observed Data
+      geom_line(data = obs_timeline, 
+              aes(survey_year, Mean_CPUE, group = region), 
+              col = "royalblue", linetype = 2) +
+      geom_point(data = obs_timeline, 
+                 aes(survey_year, Mean_CPUE, group = region), col = "royalblue") +
+      #Theme changes
+      scale_x_discrete(limits = c(as.numeric(ystart:yend)), labels = ynames) +
+      labs(
+        x = NULL, 
+        y = "Crabs per Hectare",
+        title = "Model Estimates and Yearly observed means") +
+      theme(axis.text.x=element_text(angle=45, hjust = 1, vjust=1), legend.position = "bottom") +
+      facet_grid(season~region)
+p
+
+```
