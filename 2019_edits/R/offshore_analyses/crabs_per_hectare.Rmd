@@ -1,4 +1,4 @@
----0
+---
 title: "Offshore Indices of Abundance for <br/> Blue Crabs"
 author: "Adam A Kemberling"
 date: "1/4/2020"
@@ -81,16 +81,6 @@ seamap <- seamap %>%
 # Catch only set
 crabs <- seamap %>% filter(Sapidus_Catch > 0)
 
-crabs %>% 
-  mutate(STAT_ZONE = fct_rev(STAT_ZONE)) %>% 
-  ggplot(aes(STAT_ZONE, Sapidus_Catch)) + 
-  geom_boxplot(aes(group = STAT_ZONE)) + 
-  labs(title    = "Blue Crab Catch by Stat Zone", 
-       subtitle = "Stat zones ordered West to East - 2000 to 2018", 
-       x        = "Statistical Zone",
-       y        = "C. sapidus Single Station Catch") +
-  facet_wrap(~Survey_design)
-
 
 overall_mean <- mean(seamap$CPUE_towspd, na.rm = T)
 percent_zeros <- seamap %>% filter(Sapidus_Catch == 0) %>% count()
@@ -100,6 +90,8 @@ station_count <- seamap %>% count()
 
 # Data Set Summary
 
+
+
  * Total Number of Stations = `r nrow(seamap)`     
  
  * Starting in `r min(as.numeric(as.character(seamap$Survey_Year)))` and continuing through `r max(as.numeric(as.character(seamap$Survey_Year)))`     
@@ -107,6 +99,19 @@ station_count <- seamap %>% count()
  * Total Sapidus Caught was `r sum(seamap$Sapidus_Catch, na.rm = T)`     
  
  * Overall Frequency of Occurrence was `r mean(seamap$Crab_presence, na.rm = TRUE) * 100`     
+ 
+```{r}
+crabs %>% 
+  mutate(STAT_ZONE = fct_rev(STAT_ZONE)) %>% 
+  ggplot(aes(STAT_ZONE, Sapidus_Catch)) + 
+  geom_boxplot(aes(group = STAT_ZONE)) + 
+  labs(title    = "Blue Crab Catch by Stat Zone", 
+       subtitle = "Stat zones ordered West to East - 2000 to 2018", 
+       x        = "Statistical Zone",
+       y        = "C. sapidus Single Station Catch") +
+  facet_wrap(~Survey_design)
+```
+ 
  
  
 
