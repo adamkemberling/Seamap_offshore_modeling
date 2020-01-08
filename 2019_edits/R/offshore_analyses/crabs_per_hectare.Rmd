@@ -1,8 +1,4 @@
----
-title: "Offshore Crabs/Hectare Modeling"
-editor_options: 
-  chunk_output_type: console
----
+---0
 title: "Offshore Indices of Abundance for <br/> Blue Crabs"
 author: "Adam A Kemberling"
 date: "1/4/2020"
@@ -118,8 +114,9 @@ station_count <- seamap %>% count()
 
 ## Yearly Summaries {.tabset .tabset-fade .tabset-pills}
 
-**Overall Mean Catch Crabs/Hectare: `r overall_mean`**
-**Stations with no catch: `r percent_zeros` / `r station_count` or `r (percent_zeros / station_count) * 100`**
+**Overall Mean Catch Crabs/Hectare:** `r overall_mean`   
+
+**Stations with no catch:** `r percent_zeros` / `r station_count` or `r (percent_zeros / station_count) * 100`      
 
 ```{r}
 year_sums <- seamap %>% 
@@ -719,7 +716,7 @@ Goodness of fit for generalized linear models is described using deviance. A glm
 
 `% deviance explained` is calculated as $\frac{null.deviance - deviance}{null.deviance} * 100$ and expresses the improvement of the fitted model over the null in % deviance explained.
 
-Percent Deviance for model 1a. = `r perc_dev`
+Percent Deviance for model A. = `r perc_dev`
 
 #### CPUE Timeline
 
@@ -887,7 +884,7 @@ Goodness of fit for generalized linear models is described using deviance. A glm
 
 `% deviance explained` is calculated as $\frac{null.deviance - deviance}{null.deviance} * 100$ and expresses the improvement of the fitted model over the null in % deviance explained.
 
-Percent Deviance for model 1a. = `r perc_dev`
+Percent Deviance for model B. = `r perc_dev`
 
 #### CPUE Timeline
 
