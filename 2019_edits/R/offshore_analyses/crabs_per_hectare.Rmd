@@ -650,7 +650,7 @@ season_plot_1 + theme(legend.position = "none") + season_plot_2
 # Crab/hectare Models {.tabset .tabset-pills}
 
 
-## Model A. 2000-2018 w/ interaction
+## Model A. 2000-2018 {.tabset}
 
 This model uses crabs per hectare as the response over the period of 18 years (2000-2018). Data is limited to statzones that were consistently sampled over the time period (i.e. West of Mobile Bay).
 
@@ -723,7 +723,7 @@ Goodness of fit for generalized linear models is described using deviance. A glm
 
 Percent Deviance for model A. = `r perc_dev`
 
-#### CPUE Timeline
+### CPUE Timeline
 
 Because we used area towed in the model as an offset predictions from our model can be interprated as crabs per hectare.
 
@@ -828,7 +828,7 @@ p
 
 
 
-## Model B. 2009-2018 
+## Model B. 2009-2018 {.tabset}
 
 This model uses crabs per hectare as the response over the period of 9 years (2009-2018). Data selection and sampling effort was consistent over this period. Additionally the survey expanded to the Eastern Gulf of Mexico so stat zones in that region are included as well.
 
@@ -891,7 +891,7 @@ Goodness of fit for generalized linear models is described using deviance. A glm
 
 Percent Deviance for model B. = `r perc_dev`
 
-#### CPUE Timeline
+### CPUE Timeline
 
 Because we used area towed in the model as an offset predictions from our model can be interprated as crabs per hectare.
 
