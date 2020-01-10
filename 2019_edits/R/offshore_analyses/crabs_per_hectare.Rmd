@@ -1,5 +1,5 @@
 ---
-title: "Offshore Indices of Abundance for <br/> Blue Crabs"
+title: "Offshore Blue Crab Densities for <br/> The Gulf of Mexico"
 author: "Adam A Kemberling"
 date: "1/4/2020"
 output: 
@@ -702,7 +702,7 @@ tidy(mod1a) %>%
   kable()
 ```
 
-### Fit Diagnostics - Deviance
+### Deviance
 
 
 
@@ -721,7 +721,48 @@ Goodness of fit for generalized linear models is described using deviance. A glm
 
 `% deviance explained` is calculated as $\frac{null.deviance - deviance}{null.deviance} * 100$ and expresses the improvement of the fitted model over the null in % deviance explained.
 
-Percent Deviance for model A. = `r perc_dev`
+**Percent Deviance for model A.** = `r perc_dev`
+
+
+### Likelihood Ratio Test
+
+Significance of the entire factor can be obtained by using a Chi-squared likelihood ratio test.
+
+```{r}
+
+#Drop1 method
+#drop1(mod1a, test = "F")     # F-test
+#drop1(mod1a, test = "Chisq") # Chisq LRT - no scope
+
+#Name what you want to drop
+lrt_y  <- drop1(mod1a, scope = ~ year_f, test = "Chisq")
+lrt_r  <- drop1(mod1a, scope = ~ region, test = "Chisq")
+lrt_s  <- drop1(mod1a, scope = ~ season, test = "Chisq")
+lrt_yr <- drop1(mod1a, scope = ~ year_f*region, test = "Chisq")
+
+bind_rows(
+  list(
+    lrt_y  %>% as.data.frame() %>% 
+      rownames_to_column(var = "Predictor"),
+    lrt_r  %>% as.data.frame() %>% 
+      rownames_to_column(var = "Predictor") %>% filter(Predictor == "region"),
+    lrt_s  %>% as.data.frame() %>% 
+      rownames_to_column(var = "Predictor") %>% filter(Predictor == "region"),
+    lrt_yr  %>% as.data.frame() %>% 
+      rownames_to_column(var = "Predictor") %>% filter(Predictor == "year_f:region")
+)) %>% kable()
+
+# #Anova method - LRT
+# 
+# # No interaction - testing
+# mod1_test <- MASS:::glm.nb(sapidus_catch ~ year_f + region + season + 
+#             offset(log(area_hectares)),
+#             data = seamap_west)
+# 
+# anova(mod1a, mod1_test, test = "Chisq")
+```
+
+
 
 ### CPUE Timeline
 
@@ -771,9 +812,9 @@ p
 
 ```
 
-### Observed vs. Predicted, all model factors
+### Observed vs. Predicted
 
-Model prediction (black) & observed mean values (blue), both standardized by overall mean
+Model prediction (black) & observed mean values (blue)
 
 ```{r}
 
@@ -871,7 +912,7 @@ tidy(modb) %>%
   kable()
 ```
 
-### Fit Diagnostics - Deviance
+### Deviance
 
 
 ```{r}
@@ -889,7 +930,38 @@ Goodness of fit for generalized linear models is described using deviance. A glm
 
 `% deviance explained` is calculated as $\frac{null.deviance - deviance}{null.deviance} * 100$ and expresses the improvement of the fitted model over the null in % deviance explained.
 
-Percent Deviance for model B. = `r perc_dev`
+**Percent Deviance for model B.** = `r perc_dev`
+
+
+### Likelihood Ratio Test
+
+```{r}
+
+#Drop1 method
+#drop1(mod1a, test = "F")
+#drop1(modb, test = "Chisq") # no scope
+
+#Name what you want to drop
+lrt_y  <- drop1(modb, scope = ~ year_f, test = "Chisq")
+lrt_r  <- drop1(modb, scope = ~ region, test = "Chisq")
+lrt_s  <- drop1(modb, scope = ~ season, test = "Chisq")
+lrt_yr <- drop1(modb, scope = ~ year_f*region, test = "Chisq")
+
+bind_rows(
+  list(
+    lrt_y  %>% as.data.frame() %>% 
+      rownames_to_column(var = "Predictor"),
+    lrt_r  %>% as.data.frame() %>% 
+      rownames_to_column(var = "Predictor") %>% filter(Predictor == "region"),
+    lrt_s  %>% as.data.frame() %>% 
+      rownames_to_column(var = "Predictor") %>% filter(Predictor == "region"),
+    lrt_yr  %>% as.data.frame() %>% 
+      rownames_to_column(var = "Predictor") %>% filter(Predictor == "year_f:region")
+)) %>% kable()
+
+
+```
+
 
 ### CPUE Timeline
 
@@ -939,9 +1011,9 @@ p
 
 ```
 
-### Observed vs. Predicted, all model factors
+### Observed vs. Predicted
 
-Model prediction (black) & observed mean values (blue), both standardized by overall mean
+Model prediction (black) & observed mean values (blue)
 
 ```{r}
 
