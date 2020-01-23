@@ -481,7 +481,7 @@ rs_plot_1 <- rs_summary %>%
                   position = "dodge", 
                   size = .25) +
   scale_fill_manual(name = "", values = setNames(c("gray35", "gray50"), c("Summer", "Fall"))) +
-  labs(x = "Survey Year",
+  labs(x = "Region",
        y = "Mean Catch (C. sapidus / Hectare)") + theme(
     legend.position = c(1, .95),
     legend.justification = c("right", "top"),
@@ -511,7 +511,7 @@ rs_plot_2 <- rs_summary %>%
                   size = .25) +
   scale_fill_manual(name = "", values = setNames(c("gray35", "gray50"), c("Summer", "Fall"))) +
   scale_y_continuous(labels = scales::percent, limits = c(0,1)) + 
-  labs(x = "Survey Year",
+  labs(x = "Region",
        y = "Percent Occurrence") + theme(
     legend.position = c(1, .95),
     legend.justification = c("right", "top"),
@@ -1100,7 +1100,75 @@ station_count <- seamap_west %>% count()
  
 ## Yearly Catch Plot
 
+*NOTE: Zeros removed for plotting*
+
+```{r}
+seamap_west %>% 
+  mutate(year = as.numeric(as.character(year_f))) %>% 
+  filter(cpue_towspd > 0) %>% 
+  ggplot(aes(year, cpue_towspd)) +
+  #geom_boxplot(aes(group = year)) +
+  geom_boxplot(aes(group = year), outlier.shape = NA) +
+  ylim(0, 2) +
+  labs(x = NULL, y = "Crabs / Hectare")
+```
+
+
 ## Region - Season Plot
+
+*NOTE: Zeros removed for plotting*
+
+```{r}
+region_plot_west <- seamap_west %>% 
+  filter(cpue_towspd > 0) %>% 
+  ggplot(aes(region, cpue_towspd)) +
+  geom_boxplot(aes(fill = season), outlier.shape = NA) +
+   scale_fill_grey(start = 0.3, end = 0.5) +
+  ylim(0, 2) +
+  labs(x = NULL, y = "Crabs / Hectare") + 
+  theme(
+    legend.title = element_blank(),
+    legend.position = c(1, .98),
+    legend.justification = c("right", "top"),
+    legend.box.just = "right",
+    legend.margin = margin(0, 6, 2, 2),
+    legend.background = element_rect(fill = NA)
+    )
+    
+
+season_plot_west <- seamap_west %>% 
+    group_by(region, season) %>% 
+    summarise(
+      stations = n(),
+      `missing obs`     = sum(is.na(cpue_towspd)),
+      `% Occurrence` = mean(crab_presence, na.rm = T),
+      `% Occurrence SE` = sd(crab_presence, na.rm = T) / sqrt(stations - `missing obs`)) %>% 
+    mutate(
+      occurrence_ymin    = `% Occurrence` - (2 * `% Occurrence SE`),
+      occurrence_ymax    = `% Occurrence` + (2 * `% Occurrence SE`),
+      occurrence_ymin    = ifelse(occurrence_ymin < 0, 0, occurrence_ymin)
+    ) %>% 
+  ggplot(aes(region, `% Occurrence`)) +
+    geom_pointrange(aes(ymin = occurrence_ymin, 
+                        ymax = occurrence_ymax, 
+                        shape = season, 
+                        color = season)) +
+    scale_color_grey(start = 0.3, end = 0.5) +
+    scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+    labs(x = NULL, y = "Percent Occurrence") + 
+  theme(
+    legend.title = element_blank(),
+    legend.position = c(1, .98),
+    legend.justification = c("right", "top"),
+    legend.box.just = "right",
+    legend.margin = margin(0, 6, 2, 2),
+    legend.background = element_rect(fill = NA)
+    )
+
+region_plot_west + season_plot_west
+
+```
+
 
 ## Seasonal Catch Plot
 
