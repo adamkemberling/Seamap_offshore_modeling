@@ -119,9 +119,9 @@ crabs %>%
 
 ## Yearly Summaries {.tabset .tabset-fade .tabset-pills}
 
-**Overall Mean Catch Crabs/Hectare:** `r overall_mean`   
+**Overall Mean Catch Crabs/Hectare:** `r round(overall_mean, 3)`   
 
-**Stations with no catch:** `r percent_zeros` / `r station_count` or `r (percent_zeros / station_count) * 100`      
+**Stations with no catch:** `r percent_zeros` / `r station_count` Stations **or** `r round((percent_zeros / station_count) * 100, 2)`%      
 
 ```{r}
 year_sums <- seamap %>% 
@@ -647,7 +647,7 @@ season_plot_1 + theme(legend.position = "none") + season_plot_2
 ***
 
 
-# Crab/hectare Models {.tabset .tabset-pills}
+# East-West Models {.tabset .tabset-pills}
 
 
 ## Model A. 2000-2018 {.tabset}
@@ -1069,3 +1069,95 @@ p <- modb.dat %>%
 p
 
 ```
+
+
+# Manuscript Model {.tabset .tabset-pills }
+
+## Model Dataset 
+
+```{r}
+start_year <- min(as.numeric(as.character(seamap_west$survey_year)))
+end_year <- max(as.numeric(as.character(seamap_west$survey_year)))
+total_catch <- sum(seamap_west$sapidus_catch, na.rm = T)
+overall_foa <- mean(seamap_west$crab_presence, na.rm = TRUE) * 100
+overall_mean <- mean(seamap_west$cpue_towspd, na.rm = T)
+percent_zeros <- seamap_west %>% filter(sapidus_catch == 0) %>% count()
+station_count <- seamap_west %>% count()
+```
+
+* Total Number of Stations = `r nrow(seamap_west)`     
+ 
+ * Starting in `r start_year` and continuing through `r end_year`     
+ 
+ * Total Sapidus Caught was `r total_catch`     
+ 
+ * Overall Frequency of Occurrence was `r overall_foa`  
+
+ * Overall Mean Catch Crabs/Hectare:** `r round(overall_mean, 3)`   
+ 
+ * Stations with no catch:** `r percent_zeros` / `r station_count` Stations **or** `r round((percent_zeros / station_count) * 100, 2)`%    
+ 
+ 
+## Yearly Catch Plot
+
+## Region - Season Plot
+
+## Seasonal Catch Plot
+
+
+
+## Candidate Models
+
+```{r}
+
+#Candidate 1 - no interactions
+candidate_1 <- MASS:::glm.nb(sapidus_catch ~ year_f + region + season +   #Additive covariates
+            #year_f * region + 
+            offset(log(area_hectares)),
+            data = seamap_west)
+
+#Candidate 2 - year * region
+candidate_2 <- MASS:::glm.nb(sapidus_catch ~ year_f + region + season +   #Additive covariates
+            year_f * region + 
+            offset(log(area_hectares)),
+            data = seamap_west)
+
+#Candidate 3 - year * season
+candidate_3 <- MASS:::glm.nb(sapidus_catch ~ year_f + region + season +   #Additive covariates
+            year_f * season + 
+            offset(log(area_hectares)),
+            data = seamap_west)
+
+#Candidate 4 - region * season
+candidate_4 <- MASS:::glm.nb(sapidus_catch ~ year_f + region + season +   #Additive covariates
+            region * season + 
+            offset(log(area_hectares)),
+            data = seamap_west)
+
+#Candidate 5 - year * region + region * season
+candidate_5 <- MASS:::glm.nb(sapidus_catch ~ year_f + region + season +   #Additive covariates
+            year_f * region + region * season +
+            offset(log(area_hectares)),
+            data = seamap_west)
+
+model_list <- list(
+  "no interactions" = candidate_1,
+  "year * region" = candidate_2,
+  "year * season" = candidate_3,
+  "region * season" = candidate_4,
+  "all interactions" = candidate_5
+)
+
+model_aic <- map(model_list,AIC)
+model_aic <- bind_rows(
+  imap(model_aic, function(x,y) {
+    aic_df <- data.frame("Formulation" = y, AIC = x) }
+    )
+  )
+model_aic %>% mutate(`Delta AIC` = AIC - min(AIC)) %>% knitr::kable()
+
+best_mod <- candidate_2
+rm(candidate_1, candidate_2, candidate_3, candidate_4, candidate_5)
+```
+
+## Catch per Hectare Plot
