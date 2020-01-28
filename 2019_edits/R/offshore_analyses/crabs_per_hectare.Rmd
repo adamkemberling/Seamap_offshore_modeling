@@ -1076,19 +1076,23 @@ p
 
 ## Model Dataset 
 
-The following numbers are from the Western Gulf Dataset used in the generalized linear model*
+**The following numbers are from all usable data from 2000-2018**
 
-```{r}
-start_year <- min(as.numeric(as.character(seamap_west$survey_year)))
-end_year <- max(as.numeric(as.character(seamap_west$survey_year)))
-total_catch <- sum(seamap_west$sapidus_catch, na.rm = T)
-overall_foa <- mean(seamap_west$crab_presence, na.rm = TRUE) * 100
-overall_mean <- mean(seamap_west$cpue_towspd, na.rm = T)
-percent_zeros <- seamap_west %>% filter(sapidus_catch == 0) %>% count()
-station_count <- seamap_west %>% count()
+```{r seamap all stats}
+start_year <- min(as.numeric(as.character(seamap$survey_year)))
+end_year <- max(as.numeric(as.character(seamap$survey_year)))
+total_catch <- sum(seamap$sapidus_catch, na.rm = T)
+overall_foa <- mean(seamap$crab_presence, na.rm = TRUE) * 100
+overall_mean <- mean(seamap$cpue_towspd, na.rm = T)
+percent_zeros <- seamap %>% filter(sapidus_catch == 0) %>% count()
+station_count <- seamap %>% count()
+
+#seamap %>% group_by(survey_year) %>% summarise(foa = mean(crab_presence)) %>% arrange(foa)
+
 ```
 
-* Total Number of Stations = `r nrow(seamap_west)`     
+   
+ * Total Number of Stations = `r nrow(seamap)`     
  
  * Starting in `r start_year` and continuing through `r end_year`     
  
@@ -1096,9 +1100,34 @@ station_count <- seamap_west %>% count()
  
  * Overall Frequency of Occurrence was `r overall_foa`  
 
- * Overall Mean Catch Crabs/Hectare:** `r round(overall_mean, 3)`   
+ * Overall Mean Catch Crabs/Hectare: `r overall_mean`   
  
- * Stations with no catch:** `r percent_zeros` / `r station_count` Stations **or** `r round((percent_zeros / station_count) * 100, 2)`%    
+ * Stations with no catch: `r percent_zeros` / `r station_count` Stations **or** `r round((percent_zeros / station_count) * 100, 2)`% 
+
+**The following numbers are from the Western Gulf Dataset used in the generalized linear model**
+
+```{r seamap west stats}
+start_year <- min(as.numeric(as.character(seamap_west$survey_year)))
+end_year <- max(as.numeric(as.character(seamap_west$survey_year)))
+total_catch <- sum(seamap_west$sapidus_catch, na.rm = T)
+overall_foa <- mean(seamap_west$crab_presence, na.rm = TRUE) * 100
+overall_mean <- round(mean(seamap_west$cpue_towspd, na.rm = T), 3)
+percent_zeros <- seamap_west %>% filter(sapidus_catch == 0) %>% count()
+station_count <- seamap_west %>% count()
+
+```
+   
+ * Total Number of Stations = `r nrow(seamap_west)`     
+ 
+ * Starting in `r start_year` and continuing through `r end_year`     
+ 
+ * Total Sapidus Caught was `r total_catch`     
+ 
+ * Overall Frequency of Occurrence was `r overall_foa`  
+
+ * Overall Mean Catch Crabs/Hectare: `r overall_mean`   
+ 
+ * Stations with no catch: `r percent_zeros` / `r station_count` Stations **or** `r round((percent_zeros / station_count) * 100, 2)`%    
  
  
 ## Yearly Catch Plot
@@ -1165,7 +1194,7 @@ year_plot + year_foa
 
 ## Region - Season Plot
 
-*NOTE: Zeros removed for plotting*
+*NOTE: Contains Data Across All Years and Regions (Including Florida)*
 
 ```{r}
 rs_summary <- seamap %>% 
@@ -1210,7 +1239,8 @@ rs_plot <- rs_summary %>%
                   size = .25) +
   scale_fill_manual(name = "", values = setNames(c("gray35", "gray50"), c("Summer", "Fall"))) +
   labs(x = NULL,
-       y = "Mean Catch (C. sapidus / Hectare)") + theme(
+       y = "Mean Catch (C. sapidus / Hectare)") + 
+  theme(
     legend.position = c(1, .95),
     legend.justification = c("right", "top"),
     legend.box.just = "right",
@@ -1320,6 +1350,8 @@ season_plot + season_plot_2
 
 ## Candidate Models
 
+**Model Selection using AIC**
+
 ```{r}
 
 #Candidate 1 - no interactions
@@ -1372,4 +1404,100 @@ best_mod <- candidate_2
 rm(candidate_1, candidate_2, candidate_3, candidate_4, candidate_5)
 ```
 
+**Predictor Significance using Chi-Square LRT and Deviance**
+
+
+```{r}
+
+#Drop1 method
+#drop1(mod1a, test = "F")     # F-test
+#drop1(mod1a, test = "Chisq") # Chisq LRT - no scope
+
+#Name what you want to drop
+lrt_y  <- drop1(mod1a, scope = ~ year_f, test = "Chisq")
+lrt_r  <- drop1(mod1a, scope = ~ region, test = "Chisq")
+lrt_s  <- drop1(mod1a, scope = ~ season, test = "Chisq")
+lrt_yr <- drop1(mod1a, scope = ~ year_f*region, test = "Chisq")
+
+bind_rows(
+  list(
+    lrt_y  %>% as.data.frame() %>% 
+      rownames_to_column(var = "Predictor"),
+    lrt_r  %>% as.data.frame() %>% 
+      rownames_to_column(var = "Predictor") %>% filter(Predictor == "region"),
+    lrt_s  %>% as.data.frame() %>% 
+      rownames_to_column(var = "Predictor") %>% filter(Predictor == "region"),
+    lrt_yr  %>% as.data.frame() %>% 
+      rownames_to_column(var = "Predictor") %>% filter(Predictor == "year_f:region")
+)) %>% kable()
+
+
+
+#broom::glance(best_mod) %>% kable()
+#Percent deviance explained
+perc_dev <- (best_mod$null.deviance - best_mod$deviance) / best_mod$null.deviance
+perc_dev <- round(perc_dev * 100,2)
+```
+
+*Percent Deviance Explained by Best Candidate Model:* `r perc_dev`
+
 ## Catch per Hectare Plot
+
+```{r}
+
+#Estimated Marginal Means with an offset
+#parameter in the call of offset = 0:
+best_mod_dat <- as.data.frame(emmeans(best_mod, 
+                                  specs = "year_f", 
+                                  by    = c("region", "season"),
+                                  type  = "response", 
+                                  offset = 0))
+best_mod_dat$CV <- best_mod_dat$SE/best_mod_dat$response
+
+#Drop Infinite credibility intervals
+best_mod_dat <- best_mod_dat %>% 
+  mutate(asymp.UCL = ifelse(asymp.UCL == Inf, NA, asymp.UCL))
+
+
+# #Observed data
+# mean_obs <- mean(seamap_west$cpue_towspd)
+# obs_timeline <- seamap_west %>% 
+#   group_by(survey_year, region, season) %>% 
+#   summarise(Nobs = n(),
+#             PercentPos = mean(crab_presence),
+#             Mean_CPUE = mean(cpue_towspd)) %>% 
+#   mutate(Index_Obs = Mean_CPUE/mean_obs)
+
+
+
+
+
+#ggplot of standardized index of abundance
+p <- best_mod_dat %>% 
+  mutate(year_n = as.numeric(as.character(year_f))) %>% 
+  ggplot(aes(year_n, response)) +
+      #Fitted Data
+      geom_line(aes(year_n, response, color = season)) +
+      geom_point(aes(year_n, response, color = season, shape = season)) +
+      # Observed Data
+      # geom_line(data = obs_timeline, 
+      #         aes(survey_year, Mean_CPUE, group = region), 
+      #         col = "royalblue", linetype = 2) +
+      # geom_point(data = obs_timeline, 
+      #            aes(survey_year, Mean_CPUE, group = region), col = "royalblue") +
+      scale_color_grey(start = 0.2, end = 0.6) + 
+      labs(
+        x = NULL, 
+        y = "Crabs per Hectare",
+        title = "Model Estimates and Yearly observed means") +
+      facet_grid(region ~ .) +
+  theme(
+    legend.position = c(1, .98),
+    legend.justification = c("right", "top"),
+    legend.box.just = "right",
+    legend.margin = margin(0, 6, 2, 2),
+    legend.background = element_rect(fill = NA),
+    legend.title = element_blank())
+p
+
+```
