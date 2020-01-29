@@ -43,16 +43,19 @@ mex <- ne_states(country = "mexico") %>%
 
 #Load Data
 
-#Egg Data
-eggdat <- read_csv(here("data/repo/seamap_summerandfall2017_crabs.csv"), guess_max = 10000, col_types = cols())
+#Egg Data - one record per egg
+eggdat <- read_csv("~/Dropbox/SEAMAP_2019/data/repro/seamap_summerandfall2017_crabs.csv", 
+                   guess_max = 10000, col_types = cols())
+
 eggdat <- eggdat %>% 
   mutate(Egg_stage = factor(eggdat$Egg_stage),
          molt_stage = factor(molt_stage),
          Estimated_fecundity = ifelse(Estimated_fecundity == "#DIV/0!", NA, Estimated_fecundity),
          Estimated_fecundity = as.numeric(Estimated_fecundity))
 
-#Stations
-stat_dat <- read_csv(here("data/repo/2017_allcrabs_onerow_withstationdata.csv"), guess_max = 10000, col_types = cols())
+#Stations - one row per crab record
+stat_dat <- read_csv("~/Dropbox/SEAMAP_2019/data/repro/2017_allcrabs_onerow_withstationdata.csv", 
+                     guess_max = 10000, col_types = cols())
 eggdat <- stat_dat %>%  
   select(Unique_ID, Agency, STA_TIME, END_TIME,STA_LON, STA_LAT) %>% 
   right_join(eggdat, by = "Unique_ID")
@@ -60,7 +63,7 @@ eggdat <- stat_dat %>%
 
 #Regions and Statzones
 # Add the statzone using statzone polygon - use this to make regions consistent between models
-szones <- read_sf(here("data/gis_files","NMFS_Fishing_Grids_GOM_2013.shp"), crs = 4326)
+szones <- read_sf("~/Dropbox/SEAMAP_2019/data/gis_files/NMFS_Fishing_Grids_GOM_2013.shp", crs = 4326)
 
 # Add a better StatZone ID by spatial overlap with NMFS Zones
 eggdat <- eggdat %>% 
