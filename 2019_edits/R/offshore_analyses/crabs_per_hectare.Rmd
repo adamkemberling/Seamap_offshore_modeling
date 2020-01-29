@@ -1348,9 +1348,9 @@ season_plot + season_plot_2
 
 
 
-## Candidate Models
+## Candidate Models {.tabset}
 
-**Model Selection using AIC**
+### Model Selection using AIC
 
 ```{r}
 
@@ -1404,7 +1404,7 @@ best_mod <- candidate_2
 rm(candidate_1, candidate_2, candidate_3, candidate_4, candidate_5)
 ```
 
-**Predictor Significance using Chi-Square LRT and Deviance**
+### Predictor Significance
 
 
 ```{r}
@@ -1426,7 +1426,7 @@ bind_rows(
     lrt_r  %>% as.data.frame() %>% 
       rownames_to_column(var = "Predictor") %>% filter(Predictor == "region"),
     lrt_s  %>% as.data.frame() %>% 
-      rownames_to_column(var = "Predictor") %>% filter(Predictor == "region"),
+      rownames_to_column(var = "Predictor") %>% filter(Predictor == "season"),
     lrt_yr  %>% as.data.frame() %>% 
       rownames_to_column(var = "Predictor") %>% filter(Predictor == "year_f:region")
 )) %>% kable()
@@ -1441,7 +1441,26 @@ perc_dev <- round(perc_dev * 100,2)
 
 *Percent Deviance Explained by Best Candidate Model:* `r perc_dev`
 
+
+### Model Summary
+
+Statistic reported below is the Wald Chi-Square z-score.
+
+```{r}
+#summary(best_mod) #to see what test statistic is used
+broom::tidy(best_mod) %>% kable()
+```
+
+
+### Interaction Plot
+
+```{r}
+emmip(best_mod, region ~ year_f, type = "response", offset = 0) + labs(x = NULL, caption = "Interaction Plot for year * region factors")
+```
+
+
 ## Catch per Hectare Plot
+
 
 ```{r}
 
@@ -1459,32 +1478,12 @@ best_mod_dat <- best_mod_dat %>%
   mutate(asymp.UCL = ifelse(asymp.UCL == Inf, NA, asymp.UCL))
 
 
-# #Observed data
-# mean_obs <- mean(seamap_west$cpue_towspd)
-# obs_timeline <- seamap_west %>% 
-#   group_by(survey_year, region, season) %>% 
-#   summarise(Nobs = n(),
-#             PercentPos = mean(crab_presence),
-#             Mean_CPUE = mean(cpue_towspd)) %>% 
-#   mutate(Index_Obs = Mean_CPUE/mean_obs)
-
-
-
-
-
-#ggplot of standardized index of abundance
+# Catch Plot
 p <- best_mod_dat %>% 
   mutate(year_n = as.numeric(as.character(year_f))) %>% 
   ggplot(aes(year_n, response)) +
-      #Fitted Data
       geom_line(aes(year_n, response, color = season)) +
       geom_point(aes(year_n, response, color = season, shape = season)) +
-      # Observed Data
-      # geom_line(data = obs_timeline, 
-      #         aes(survey_year, Mean_CPUE, group = region), 
-      #         col = "royalblue", linetype = 2) +
-      # geom_point(data = obs_timeline, 
-      #            aes(survey_year, Mean_CPUE, group = region), col = "royalblue") +
       scale_color_grey(start = 0.2, end = 0.6) + 
       labs(
         x = NULL, 
