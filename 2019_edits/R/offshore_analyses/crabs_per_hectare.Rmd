@@ -1074,6 +1074,17 @@ p
 
 # Manuscript Model {.tabset .tabset-pills }
 
+```{r data export}
+write_csv(seamap, str_c("~/Dropbox/SEAMAP_2019/data/offshore/", 
+                        "seamap_manuscriptmods_full.csv"), 
+          col_names = TRUE)
+
+write_csv(seamap_west, str_c("~/Dropbox/SEAMAP_2019/data/offshore/",
+                             "seamapwest_manuscriptmods_full.csv"), 
+          col_names = TRUE)
+```
+
+
 ## Model Dataset 
 
 **The following numbers are from all usable data from 2000-2018**

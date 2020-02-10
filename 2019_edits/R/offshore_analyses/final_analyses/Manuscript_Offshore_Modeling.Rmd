@@ -1,0 +1,799 @@
+---
+title: "Offshore Modeling - Manuscript Model"
+author: "Adam A. Kemberling"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+#packages
+library(MASS)
+library(here)
+library(tidyverse)
+library(knitr)
+library(emmeans)
+library(patchwork)
+library(gridExtra)
+library(broom)
+library(statmod)
+library(sf)
+conflicted::conflict_prefer("select", "dplyr")
+conflicted::conflict_prefer("filter", "dplyr")
+
+
+#Format ggplot for rest of document
+theme_set(theme_bw() + theme(panel.grid.major = element_blank(), 
+                             panel.grid.minor = element_blank(), 
+                             panel.border = element_rect(fill = NA),
+                             axis.text = element_text(size = 12, color = "black"),
+                             axis.title = element_text(size = 14, color = "black")))
+
+`%not in%` <- purrr::negate(`%in%`)
+```
+
+# Manuscript Model
+
+```{r load export}
+seamap <- read_csv(str_c("~/Dropbox/SEAMAP_2019/data/offshore/", 
+                        "seamap_manuscriptmods_full.csv"), 
+                   col_types = cols()) %>% 
+  mutate(year_f = factor(year_f),
+         Season = factor(season, levels = c("Summer", "Fall")),
+         region = factor(region, levels = c("Texas", "Louisiana", "MS Bight", "Florida"))
+)
+
+seamap_west <- read_csv(str_c("~/Dropbox/SEAMAP_2019/data/offshore/", 
+                        "seamapwest_manuscriptmods_full.csv"), 
+                        col_types = cols()) %>% 
+  mutate(year_f = factor(year_f),
+         Season = factor(season, levels = c("Summer", "Fall")),
+         region = factor(region, levels = c("Texas", "Louisiana", "MS Bight", "Florida"))
+)
+```
+
+
+## Model Dataset {.tabset}
+
+### Model Data - West Only
+
+```{r seamap west stats}
+start_year <- min(as.numeric(as.character(seamap_west$survey_year)))
+end_year <- max(as.numeric(as.character(seamap_west$survey_year)))
+total_catch <- sum(seamap_west$sapidus_catch, na.rm = T)
+overall_foa <- round(mean(seamap_west$crab_presence, na.rm = TRUE), 3) * 100
+overall_mean <- round(mean(seamap_west$cpue_towspd, na.rm = T), 3)
+percent_zeros <- seamap_west %>% filter(sapidus_catch == 0) %>% count()
+station_count <- seamap_west %>% count()
+
+```
+   
+ * Total Number of Stations = `r nrow(seamap_west)`     
+ 
+ * Starting in `r start_year` and continuing through `r end_year`     
+ 
+ * Total Sapidus Caught was `r total_catch`     
+ 
+ * Overall Frequency of Occurrence was `r overall_foa`  
+
+ * Overall Mean Catch Crabs/Hectare: `r overall_mean`   
+ 
+ * Stations with no catch: `r percent_zeros` / `r station_count` Stations **or** `r round((percent_zeros / station_count) * 100, 2)`%    
+ 
+
+### East + West
+
+```{r seamap all stats}
+start_year <- min(as.numeric(as.character(seamap$survey_year)))
+end_year <- max(as.numeric(as.character(seamap$survey_year)))
+total_catch <- sum(seamap$sapidus_catch, na.rm = T)
+overall_foa <- round(mean(seamap$crab_presence, na.rm = TRUE), 3) * 100
+overall_mean <- round(mean(seamap$cpue_towspd, na.rm = T), 3)
+percent_zeros <- seamap %>% filter(sapidus_catch == 0) %>% count()
+station_count <- seamap %>% count()
+
+```
+
+   
+ * Total Number of Stations = `r nrow(seamap)`     
+ 
+ * Starting in `r start_year` and continuing through `r end_year`     
+ 
+ * Total Sapidus Caught was `r total_catch`     
+ 
+ * Overall Frequency of Occurrence was `r overall_foa`  
+
+ * Overall Mean Catch Crabs/Hectare: `r overall_mean`   
+ 
+ * Stations with no catch: `r percent_zeros` / `r station_count` Stations **or** `r round((percent_zeros / station_count) * 100, 2)`% 
+
+
+ 
+## Yearly Catch Plot {.tabset}
+
+### Data Summary
+
+*NOTE: Contains Data Across All Years and Regions (Including Florida)*
+
+```{r}
+year_sums <- seamap %>% 
+  group_by(survey_year) %>% 
+  summarise(Stations          = n(),
+            `Missing Obs`     = sum(is.na(cpue_towspd)),
+            `Mean Catch`      = mean(cpue_towspd, na.rm = T),
+            `SD`              = sd(cpue_towspd, na.rm = T),
+            `Var`             = var(cpue_towspd),
+            `Overdispersed`   = ifelse(Var > `Mean Catch`, "yes", "no"),
+            `Catch SE`        = sd(cpue_towspd, na.rm = T) / sqrt(Stations - `Missing Obs`),
+            `% Occurrence`    = mean(crab_presence, na.rm = T),
+            `% Occurrence SE` = sd(crab_presence, na.rm = T) / sqrt(Stations - `Missing Obs`)
+            ) %>% 
+  ungroup() %>% 
+    mutate(Survey_Year        = factor(survey_year),
+           catch_ymin         = `Mean Catch` - (2 * `Catch SE`),
+           catch_ymax         = `Mean Catch` + (2 * `Catch SE`),
+           catch_ymin         = ifelse(catch_ymin < 0, 0, catch_ymin),
+           occurrence_ymin    = `% Occurrence` - (2 * `% Occurrence SE`),
+           occurrence_ymax    = `% Occurrence` + (2 * `% Occurrence SE`),
+           occurrence_ymin    = ifelse(occurrence_ymin < 0, 0, occurrence_ymin)
+         )
+
+
+year_sums %>% select(`Survey Year` = survey_year, Stations, `Missing Obs`, `% Occurrence`, `Mean Catch`, SD, `Overdispersed`) %>% knitr::kable()
+```
+
+### Annual Mean Catch
+
+```{r}
+
+year_plot <- year_sums %>% 
+  mutate(survey_year = as.numeric(as.character(survey_year))) %>% 
+  ggplot() +
+    geom_col(aes(survey_year, `Mean Catch`)) +
+    geom_errorbar(aes(x = survey_year, 
+                      ymin = catch_ymin,
+                      ymax = catch_ymax),
+                  size = .25) +
+  labs(x = NULL,
+       y = "Mean Catch (C. sapidus / Hectare)")
+
+
+year_plot
+```
+
+### Annual Frequency of Occurrence
+
+```{r}
+year_foa <- year_sums %>% 
+  mutate(survey_year = as.numeric(as.character(survey_year))) %>% 
+  ggplot() +
+    geom_col(aes(survey_year, `% Occurrence`)) +
+    # geom_errorbar(aes(x = survey_year, 
+    #                   ymin = occurrence_ymin,
+    #                   ymax = occurrence_ymax),
+    #               size = .25) +
+  scale_y_continuous(labels = scales::percent, limits = c(0,1)) + 
+  labs(x = NULL, y = "Percent Occurrence")
+
+year_foa
+```
+
+### Side x Side
+
+```{r}
+
+year_plot + year_foa
+```
+
+
+## Region - Season Plot {.tabset}
+
+*NOTE: Contains Data Across All Years and Regions (Including Florida)*
+
+
+*NOTE 2: Mean Catch (per hectare) and frequency of occurrence calculated for each year, in each region, for each season. The mean and standard error of those annual measurements are then taken*
+
+### Factor Summary
+
+```{r }
+# rs_summary <- seamap %>% 
+#   filter(is.na(region)      == FALSE) %>% 
+#   group_by(region, season) %>% 
+#   summarise(Stations          = n(),
+#             `Missing Obs`     = sum(is.na(cpue_towspd)),
+#             `Mean Catch`      = mean(cpue_towspd, na.rm = T),
+#             `SD`              = sd(cpue_towspd, na.rm = T),
+#             `Var`             = var(cpue_towspd),
+#             `Overdispersed`   = ifelse(Var > `Mean Catch`, "yes", "no"),
+#             `Catch SE`        = sd(cpue_towspd, na.rm = T) / sqrt(Stations - `Missing Obs`),
+#             `% Occurrence`    = mean(crab_presence, na.rm = T),
+#             `% Occurrence SE` = sd(crab_presence, na.rm = T) / sqrt(Stations - `Missing Obs`)) %>% 
+#     ungroup() %>% 
+#     mutate(Season             = factor(season, levels = c("Summer", "Fall")),
+#            region             = factor(region, 
+#                                        levels = c("Texas", "Louisiana", "MS Bight", "Florida")),
+#            #region             = fct_rev(region),
+#            catch_ymin         = `Mean Catch` - (2 * `Catch SE`),
+#            catch_ymax         = `Mean Catch` + (2 * `Catch SE`),
+#            catch_ymin         = ifelse(catch_ymin < 0, 0, catch_ymin),
+#            occurrence_ymin    = `% Occurrence` - (2 * `% Occurrence SE`),
+#            occurrence_ymax    = `% Occurrence` + (2 * `% Occurrence SE`),
+#            occurrence_ymin    = ifelse(occurrence_ymin < 0, 0, occurrence_ymin)
+#     )
+
+
+# #Summary Table
+# rs_summary %>%
+#   select(Region = region, Season, Stations, `Missing Obs`, `% Occurrence`, `Mean Catch`, SD, Overdispersed) %>%
+#   knitr::kable()
+
+
+
+
+#Calaculate Annual average cpue and percent occurrence
+rs_summary <- seamap %>% 
+  group_by(survey_year, region, season) %>% 
+  summarise(cpue = mean(cpue_towspd, na.rm = T),
+            percent_occurrence = mean(crab_presence, na.rm = T)) %>% 
+  group_by(region, season) %>% 
+  summarise(nyears = n(),
+            avg_annual_cpue = mean(cpue, na.rm = T),
+            annual_cpue_se = sd(cpue, na.rm = T) / sqrt(nyears),
+            avg_percent_occurrence = mean(percent_occurrence, na.rm = T),
+            po_se = sd(percent_occurrence, na.rm = T) / sqrt(nyears)) %>% 
+    ungroup() %>%
+    mutate(Season             = factor(season, levels = c("Summer", "Fall")),
+           region             = factor(region, levels = c("Texas", "Louisiana", 
+                                                          "MS Bight", "Florida")),
+           catch_ymin         = avg_annual_cpue - (2 * annual_cpue_se),
+           catch_ymax         = avg_annual_cpue + (2 * annual_cpue_se),
+           catch_ymin         = ifelse(catch_ymin < 0, 0, catch_ymin),
+           occurrence_ymin    = avg_percent_occurrence - (2 * po_se),
+           occurrence_ymax    = avg_percent_occurrence + (2 * po_se),
+           occurrence_ymin    = ifelse(occurrence_ymin < 0, 0, occurrence_ymin),
+           occurrence_ymax    = ifelse(occurrence_ymax > 1, 1, occurrence_ymax)
+    )
+
+
+```
+
+
+### Mean Catch by Region and Season
+
+```{r}
+
+# Plot
+rs_plot <- rs_summary %>% 
+  ggplot(aes(region, avg_annual_cpue, fill = season)) +
+    geom_col(position = "dodge") +
+    geom_errorbar(aes(ymin = catch_ymin,
+                      ymax = catch_ymax),
+                  position = "dodge", 
+                  size = .25) +
+  scale_fill_manual(name = "", values = setNames(c("gray35", "gray50"), c("Summer", "Fall"))) +
+  labs(x = NULL,
+       y = "Mean Catch (C. sapidus / Hectare)") + 
+  theme(
+    legend.position = c(1, .95),
+    legend.justification = c("right", "top"),
+    legend.box.just = "right",
+    legend.margin = margin(0, 6, 2, 2),
+    legend.background = element_rect(fill = NA))
+
+
+rs_plot
+```
+
+### Frequency of Occurrence
+
+```{r}
+rs_plot_2 <- rs_summary %>% 
+  ggplot(aes(region, avg_percent_occurrence, fill = Season)) +
+    geom_col(position = "dodge") +
+    geom_errorbar(aes(ymin = occurrence_ymin,
+                      ymax = occurrence_ymax),
+                  position = "dodge",
+                  size = .25) +
+  scale_fill_manual(name = "", values = setNames(c("gray35", "gray50"), c("Summer", "Fall"))) +
+  scale_y_continuous(labels = scales::percent, limits = c(0,1)) + 
+  labs(x = NULL,
+       y = "Percent Occurrence") + theme(
+    legend.position = c(1, .95),
+    legend.justification = c("right", "top"),
+    legend.box.just = "right",
+    legend.margin = margin(0, 6, 2, 2),
+    legend.background = element_rect(fill = NA))
+
+rs_plot_2
+```
+
+### Side x Side
+
+```{r}
+rs_plot + rs_plot_2
+
+```
+
+
+
+
+
+## Seasonal Catch Plot {.tabset}
+
+*NOTE 2: Mean Catch (per hectare) and frequency of occurrence calculated for each year, for each season. The mean and standard error of those annual measurements are then taken*
+
+### Season Factor Summary
+
+```{r}
+# season_summary <- seamap %>% 
+#   group_by(survey_year, season) %>% 
+#   summarise(Stations          = n(),
+#             `Missing Obs`     = sum(is.na(cpue_towspd)),
+#             `Mean Catch`      = mean(cpue_towspd, na.rm = T),
+#             `SD`              = sd(cpue_towspd, na.rm = T),
+#             `Var`             = var(cpue_towspd),
+#             `Overdispersed`   = ifelse(Var > `Mean Catch`, "yes", "no"),
+#             `Catch SE`        = sd(cpue_towspd, na.rm = T) / sqrt(Stations - `Missing Obs`),
+#             `% Occurrence`    = mean(crab_presence, na.rm = T),
+#             `% Occurrence SE` = sd(crab_presence, na.rm = T) / sqrt(Stations - `Missing Obs`)) %>% 
+#     ungroup() %>% 
+#     mutate(survey_year        = factor(survey_year),
+#            # StatZone         = factor(StatZone),
+#            # StatZone         = fct_rev(StatZone),
+#            catch_ymin         = `Mean Catch` - (2 * `Catch SE`),
+#            catch_ymax         = `Mean Catch` + (2 * `Catch SE`),
+#            catch_ymin         = ifelse(catch_ymin < 0, 0, catch_ymin),
+#            occurrence_ymin    = `% Occurrence` - (2 * `% Occurrence SE`),
+#            occurrence_ymax    = `% Occurrence` + (2 * `% Occurrence SE`),
+#            occurrence_ymin    = ifelse(occurrence_ymin < 0, 0, occurrence_ymin)
+#          )
+# 
+# season_summary %>% select(`Survey Year` = survey_year, Season = season, Stations, `Missing Obs`, `% Occurrence`, `Mean Catch`, SD, Overdispersed) %>% knitr::kable()
+
+#Calaculate Annual average cpue and percent occurrence
+season_summary <- seamap %>% 
+  group_by(survey_year, season) %>% 
+  summarise(cpue = mean(cpue_towspd, na.rm = T),
+            percent_occurrence = mean(crab_presence, na.rm = T)) %>% 
+  group_by(season) %>% 
+  summarise(nyears = n(),
+            avg_annual_cpue = mean(cpue, na.rm = T),
+            annual_cpue_se = sd(cpue, na.rm = T) / sqrt(nyears),
+            avg_percent_occurrence = mean(percent_occurrence, na.rm = T),
+            po_se = sd(percent_occurrence, na.rm = T) / sqrt(nyears)) %>% 
+    ungroup() %>%
+    mutate(Season             = factor(season, levels = c("Summer", "Fall")),
+           catch_ymin         = avg_annual_cpue - (2 * annual_cpue_se),
+           catch_ymax         = avg_annual_cpue + (2 * annual_cpue_se),
+           catch_ymin         = ifelse(catch_ymin < 0, 0, catch_ymin),
+           occurrence_ymin    = avg_percent_occurrence - (2 * po_se),
+           occurrence_ymax    = avg_percent_occurrence + (2 * po_se),
+           occurrence_ymin    = ifelse(occurrence_ymin < 0, 0, occurrence_ymin),
+           occurrence_ymax    = ifelse(occurrence_ymax > 1, 1, occurrence_ymax)
+    )
+
+```
+
+### Seasonal Catch Plot
+
+```{r}
+
+season_plot <- season_summary %>% 
+  ggplot(aes(season, avg_annual_cpue, fill = season)) +
+    geom_col() +
+    geom_errorbar(aes(ymin = catch_ymin,
+                      ymax = catch_ymax),
+                  size = .25) +
+  scale_fill_manual(name = "", values = setNames(c("gray35", "gray50"), c("Summer", "Fall"))) +
+  labs(x = NULL,
+       y = "Mean Catch (C. sapidus / Hectare)") + theme(
+    legend.position = c(1, .95),
+    legend.justification = c("right", "top"),
+    legend.box.just = "right",
+    legend.margin = margin(0, 6, 2, 2),
+    legend.background = element_rect(fill = NA))
+
+
+season_plot
+
+```
+
+### Seasonal Frequency of Occurrence
+
+```{r}
+
+season_plot_2 <- season_summary %>% 
+  ggplot(aes(season, avg_percent_occurrence, fill = season)) +
+    geom_col(position = "dodge") +
+    geom_errorbar(aes(ymin = occurrence_ymin,
+                      ymax = occurrence_ymax),
+                  size = .25) +
+  scale_fill_manual(name = "", values = setNames(c("gray35", "gray50"), c("Summer", "Fall"))) +
+  scale_y_continuous(labels = scales::percent, limits = c(0,1)) + 
+  labs(x = NULL,
+       y = "Percent Occurrence") + theme(
+    legend.position = c(1, .95),
+    legend.justification = c("right", "top"),
+    legend.box.just = "right",
+    legend.margin = margin(0, 6, 2, 2),
+    legend.background = element_rect(fill = NA))
+
+season_plot_2
+```
+
+### Side x Side
+
+```{r}
+season_plot + season_plot_2
+```
+
+
+
+## Candidate Models {.tabset}
+
+### Model Selection using AIC
+
+```{r}
+
+#Candidate 1 - no interactions
+candidate_1 <- MASS:::glm.nb(sapidus_catch ~ year_f + region + season +   #Additive covariates
+            #year_f * region + 
+            offset(log(area_hectares)),
+            data = seamap_west)
+
+#Candidate 2 - year * region
+candidate_2 <- MASS:::glm.nb(sapidus_catch ~ year_f + region + season +   #Additive covariates
+            year_f * region + 
+            offset(log(area_hectares)),
+            data = seamap_west)
+
+#Candidate 3 - year * season
+candidate_3 <- MASS:::glm.nb(sapidus_catch ~ year_f + region + season +   #Additive covariates
+            year_f * season + 
+            offset(log(area_hectares)),
+            data = seamap_west)
+
+#Candidate 4 - region * season
+candidate_4 <- MASS:::glm.nb(sapidus_catch ~ year_f + region + season +   #Additive covariates
+            region * season + 
+            offset(log(area_hectares)),
+            data = seamap_west)
+
+#Candidate 5 - year * region + region * season
+candidate_5 <- MASS:::glm.nb(sapidus_catch ~ year_f + region + season +   #Additive covariates
+            year_f * region + region * season +
+            offset(log(area_hectares)),
+            data = seamap_west)
+
+model_list <- list(
+  "no interactions" = candidate_1,
+  "year * region" = candidate_2,
+  "year * season" = candidate_3,
+  "region * season" = candidate_4,
+  "all interactions" = candidate_5
+)
+
+model_aic <- map(model_list,AIC)
+model_aic <- bind_rows(
+  imap(model_aic, function(x,y) {
+    aic_df <- data.frame("Formulation" = y, AIC = x) }
+    )
+  )
+model_aic %>% mutate(`Delta AIC` = AIC - min(AIC)) %>% knitr::kable()
+
+best_mod <- candidate_2
+rm(candidate_1, candidate_2, candidate_3, candidate_4, candidate_5)
+```
+
+### Predictor Significance
+
+
+```{r}
+
+#Drop1 method
+#drop1(mod1a, test = "F")     # F-test
+#drop1(mod1a, test = "Chisq") # Chisq LRT - no scope
+
+#Name what you want to drop
+lrt_y  <- drop1(best_mod, scope = ~ year_f, test = "Chisq")
+lrt_r  <- drop1(best_mod, scope = ~ region, test = "Chisq")
+lrt_s  <- drop1(best_mod, scope = ~ season, test = "Chisq")
+lrt_yr <- drop1(best_mod, scope = ~ year_f*region, test = "Chisq")
+
+bind_rows(
+  list(
+    lrt_y  %>% as.data.frame() %>% 
+      rownames_to_column(var = "Predictor"),
+    lrt_r  %>% as.data.frame() %>% 
+      rownames_to_column(var = "Predictor") %>% filter(Predictor == "region"),
+    lrt_s  %>% as.data.frame() %>% 
+      rownames_to_column(var = "Predictor") %>% filter(Predictor == "season"),
+    lrt_yr  %>% as.data.frame() %>% 
+      rownames_to_column(var = "Predictor") %>% filter(Predictor == "year_f:region")
+)) %>% kable()
+
+
+
+#broom::glance(best_mod) %>% kable()
+#Percent deviance explained
+perc_dev <- (best_mod$null.deviance - best_mod$deviance) / best_mod$null.deviance
+perc_dev <- round(perc_dev * 100,2)
+```
+
+*Percent Deviance Explained by Best Candidate Model:* `r perc_dev`
+
+
+### Model Summary
+
+Statistic reported below is the Wald Chi-Square z-score.
+
+```{r}
+#summary(best_mod) #to see what test statistic is used
+broom::tidy(best_mod) %>% kable()
+```
+
+
+### Interaction Plot
+
+```{r}
+emmip(best_mod, region ~ year_f, type = "response", offset = 0) + labs(x = NULL, caption = "Interaction Plot for year * region factors")
+```
+
+
+## Catch per Hectare Plot
+
+
+```{r}
+
+#Estimated Marginal Means with an offset
+#parameter in the call of offset = 0:
+best_mod_dat <- as.data.frame(emmeans(best_mod, 
+                                  specs = "year_f", 
+                                  by    = c("region", "season"),
+                                  type  = "response", 
+                                  offset = 0))
+best_mod_dat$CV <- best_mod_dat$SE/best_mod_dat$response
+
+#Drop Infinite credibility intervals
+best_mod_dat <- best_mod_dat %>% 
+  mutate(asymp.UCL = ifelse(asymp.UCL == Inf, NA, asymp.UCL))
+
+
+# Catch Plot
+p <- best_mod_dat %>% 
+  mutate(year_n = as.numeric(as.character(year_f))) %>% 
+  ggplot(aes(year_n, response)) +
+      geom_line(aes(year_n, response, color = season)) +
+      geom_point(aes(year_n, response, color = season, shape = season)) +
+      scale_color_grey(start = 0.2, end = 0.6) + 
+      labs(
+        x = NULL, 
+        y = "Crabs per Hectare",
+        title = "Model Estimates and Yearly observed means") +
+      facet_grid(region ~ .) +
+  theme(
+    legend.position = c(1, .98),
+    legend.justification = c("right", "top"),
+    legend.box.just = "right",
+    legend.margin = margin(0, 6, 2, 2),
+    legend.background = element_rect(fill = NA),
+    legend.title = element_blank())
+p
+
+```
+
+
+
+
+## Raster Plots  {.tabset}
+
+
+```{r spatial data setup}
+
+library(stars)
+library(sf)
+library(rnaturalearth)
+
+#State and Country Bounds
+usmap <- ne_states(country = "united states of america") %>% 
+  st_as_sf() %>% 
+  filter(region == "South")
+
+mex <- ne_states(country = "mexico") %>% 
+  st_as_sf()
+
+## Statistical Zones
+
+
+#Load the simplified nmfs grid
+szones <- read_sf("~/Dropbox/SEAMAP_2019/data/gis_files/nmfs_grids_clipped_rough.shp", 
+                  crs = 4326) #%>% st_simplify()
+
+
+
+
+
+
+
+#Custom grid for rasterize
+test_bbox <- st_bbox(c(xmin = -97.5, xmax = -81,
+                       ymin = 24.3, ymax = 30.5),
+                     crs = st_crs(4326))
+
+num_x <- seq(from = -97.4, to = -81.3, by = 0.2)
+num_y <- seq(from = 24.4, to = 30.4, by = 0.2)
+
+
+
+####  Aggregation  ####
+#Aggregating the seamap model into bins
+seamap_sf_agg <- seamap %>% 
+  mutate(lon_bin = round(start_long, 1),
+         lat_bin = round(start_lat, 1)) %>% 
+  group_by(lon_bin, lat_bin) %>% 
+  summarise(n_stations = n(),
+            total_catch = sum(sapidus_catch, na.rm = T),
+            avg_cpue = mean(cpue_towspd)) %>% 
+  st_as_sf(coords = c("lon_bin", "lat_bin"), crs = 4326, remove = FALSE)
+
+####  Total Catch  ####
+
+#Convert to Raster and plot 
+catch_ras <- st_rasterize(
+  seamap_sf_agg["total_catch"],
+  template = st_as_stars(
+      test_bbox,
+      #st_bbox(seamap_sf), 
+      values = NA_real_,
+      nx = length(num_x),
+      ny = length(num_y))
+  )
+
+#plot(catch_ras, axes = T, main = "Total Sapidus Catch - All Years 2000+")
+
+####  Mean CPUE  ####
+
+cpue_ras <- st_rasterize(
+  seamap_sf_agg["avg_cpue"],
+  template = st_as_stars(
+      test_bbox,
+      #st_bbox(seamap_sf), 
+      values = NA_real_,
+      nx = length(num_x),
+      ny = length(num_y))
+  )
+
+#plot(cpue_ras, axes = T, main = " Mean Catch/Hectare - All Years 2000+")
+
+####  Sampling Effort  ####
+effort_ras <- st_rasterize(
+  seamap_sf_agg["n_stations"],
+  template = st_as_stars(
+      test_bbox,
+      #st_bbox(seamap_sf), 
+      values = NA_real_,
+      nx = length(num_x),
+      ny = length(num_y))
+  )
+
+```
+
+
+### Statistical Zones
+```{r}
+
+#Numbering for statzones
+sz_df <- tribble(
+  
+~"SZ", ~"long",  ~"lat",
+21,    -96.5,     26.5,
+20,    -96.7,  27.5,
+19,    -95.75,  28.25,
+18,    -94.5,   28.8,
+17,    -93.5,   28.9,
+16,    -92.5,   28.85,
+15,    -91.5,   28.8,
+14,    -90.5,   28.75,
+13,    -89.75,  28.9,
+12,    -89.25,  29.65,
+11,    -88.5,   29.75,
+10,    -87.5,   29.80,
+ 9,    -86.5,   29.80,
+ 8,    -85.5,   29.35,
+ 7,    -84.20,   29.45,
+ 6,    -83.8,   28.50,
+ 5,    -83.5,   27.55,
+ 4,    -83.35,   26.75,
+ 3,    -83.35,   25.75,
+ 2,    -84.20,   24.55,
+ 2,    -81.55,   24.28,
+ 1,    -82.5,   24.28
+
+) %>% mutate(SZ = as.character(SZ))
+
+ggplot() +
+  geom_sf(data = szones, fill = NA) +
+  geom_sf(data = usmap) +
+  geom_sf(data = mex) +
+  geom_text(data = sz_df, aes(long, lat, label = SZ), size = 3.5) +
+  coord_sf(xlim = c(-98, -81), ylim = c(24, 31)) +
+  labs(x = NULL, y = NULL)  +
+  scale_y_continuous(breaks = c(25,30))
+```
+
+
+
+
+### Sampling Effort
+
+```{r}
+####  Sampling Effort  ####
+ggplot() +
+  geom_stars(data = effort_ras) +
+  geom_sf(data = usmap) +
+  geom_sf(data = mex) +
+  scale_fill_distiller(palette = "Spectral", na.value = "transparent") +
+  coord_sf(xlim = c(-98, -81), ylim = c(24, 31)) +
+  scale_y_continuous(breaks = c(25,30)) +
+  labs(x = NULL, y = NULL) +
+  guides(fill = guide_colorbar(title = "Total Sampling Effort (Stations)",
+                               title.hjust = 0.5, 
+                               title.position = "top",
+                               barwidth = 10)) +
+  theme(legend.position = "bottom")
+```
+
+### Catch per Hectare
+
+```{r}
+
+####  CPUE  ####
+ggplot() +
+  geom_stars(data = cpue_ras) +
+  geom_sf(data = usmap) +
+  geom_sf(data = mex) +
+  scale_fill_distiller(palette = "Spectral", na.value = "transparent") +
+  coord_sf(xlim = c(-98, -81), ylim = c(24, 31)) +
+  scale_y_continuous(breaks = c(25,30)) +
+  labs(x = NULL, y = NULL) +
+  guides(fill = guide_colorbar(title = "Average Catch/Hectare",
+                               title.hjust = 0.5, 
+                               title.position = "top",
+                               barwidth = 10)) +
+  theme(legend.position = "bottom")
+
+```
+
+### Total Catch
+
+```{r}
+####  Total Catch  ####
+ggplot() +
+  geom_stars(data = catch_ras) +
+  geom_sf(data = usmap) +
+  geom_sf(data = mex) +
+  scale_fill_distiller(palette = "Spectral", na.value = "transparent") +
+  coord_sf(xlim = c(-98, -81), ylim = c(24, 31)) +
+  scale_y_continuous(breaks = c(25,30)) +
+  labs(x = NULL, y = NULL) +
+  guides(fill = guide_colorbar(title = "Total C. sapidus Caught",
+                               title.hjust = 0.5, 
+                               title.position = "top",
+                               barwidth = 10)) +
+  theme(legend.position = "bottom")
+
+
+
+
+
+
+
+
+```
+
