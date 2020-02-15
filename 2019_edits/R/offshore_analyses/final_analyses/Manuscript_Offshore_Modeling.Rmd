@@ -30,11 +30,15 @@ conflicted::conflict_prefer("filter", "dplyr")
 
 
 #Format ggplot for rest of document
-theme_set(theme_bw() + theme(panel.grid.major = element_blank(), 
-                             panel.grid.minor = element_blank(), 
-                             panel.border = element_rect(fill = NA),
-                             axis.text = element_text(size = 12, color = "black"),
-                             axis.title = element_text(size = 14, color = "black")))
+theme_set(theme_bw() + 
+          theme(panel.grid.major = element_blank(), 
+            panel.grid.minor = element_blank(), 
+            panel.border = element_rect(fill = NA),
+            axis.text = element_text(size = 12, color = "black"),
+            axis.title = element_text(size = 12, color = "black"),
+            legend.text = element_text(size = 12, color = "black"),
+            legend.background = element_rect(fill = NA))
+          )
 
 `%not in%` <- purrr::negate(`%in%`)
 ```
@@ -157,14 +161,18 @@ year_sums %>%
 
 ```{r, fig.height=4}
 
+west_mean <- round(mean(seamap_west$cpue_towspd, na.rm = T), 3)
+
 year_plot <- year_sums %>% 
   mutate(survey_year = as.numeric(as.character(survey_year))) %>% 
   ggplot() +
-    geom_col(aes(survey_year, `Mean Catch`)) +
+    geom_col(aes(survey_year, `Mean Catch`), fill = "gray35") +
     geom_errorbar(aes(x = survey_year, 
                       ymin = catch_ymin,
                       ymax = catch_ymax),
                   size = .25) +
+  geom_hline(yintercept = west_mean, 
+             linetype = "dashed") +
   labs(x = NULL,
        y = expression(paste("Mean CPUE (crabs ", ha^{-1},")"))
   )
@@ -176,10 +184,14 @@ year_plot
 ### Annual Frequency of Occurrence
 
 ```{r, fig.height=4}
+west_foa <- round(mean(seamap_west$crab_presence, na.rm = TRUE), 3)
+
 year_foa <- year_sums %>% 
   mutate(survey_year = as.numeric(as.character(survey_year))) %>% 
   ggplot() +
     geom_col(aes(survey_year, `% Occurrence`)) +
+    geom_hline(yintercept = west_foa, 
+               linetype = "dashed") +
     scale_y_continuous(labels = scales::percent, limits = c(0,1)) + 
     labs(x = NULL, y = "Percent occurrence")
 
@@ -279,15 +291,14 @@ rs_plot <- rs_summary %>%
                       ymax = catch_ymax),
                   position = "dodge", 
                   size = .25) +
-  scale_fill_manual(name = "", values = setNames(c("gray35", "gray50"), c("Summer", "Fall"))) +
+  scale_fill_manual(name = "", values = setNames(c("gray35", "gray70"), c("Summer", "Fall"))) +
   labs(x = NULL,
        y = expression(paste("Mean CPUE (crabs ", ha^{-1},")"))) + 
   theme(
     legend.position = c(1, .95),
     legend.justification = c("right", "top"),
     legend.box.just = "right",
-    legend.margin = margin(0, 6, 2, 2),
-    legend.background = element_rect(fill = NA))
+    legend.margin = margin(0, 6, 2, 2))
 
 
 rs_plot
@@ -303,15 +314,15 @@ rs_plot_2 <- rs_foa %>%
                       ymax = occurrence_ymax),
                   position = "dodge",
                   size = .25) +
-  scale_fill_manual(name = "", values = setNames(c("gray35", "gray50"), c("Summer", "Fall"))) +
+  scale_fill_manual(name = "", values = setNames(c("gray35", "gray70"), c("Summer", "Fall"))) +
   scale_y_continuous(labels = scales::percent, limits = c(0,1)) + 
   labs(x = NULL,
-       y = "Percent occurrence") + theme(
+       y = "Percent occurrence") + 
+  theme(
     legend.position = c(1, .95),
     legend.justification = c("right", "top"),
     legend.box.just = "right",
-    legend.margin = margin(0, 6, 2, 2),
-    legend.background = element_rect(fill = NA))
+    legend.margin = margin(0, 6, 2, 2))
 
 rs_plot_2
 ```
@@ -319,6 +330,7 @@ rs_plot_2
 ### Side x Side
 
 ```{r fig.height=4}
+rs_plot <- rs_plot + theme(legend.position = "none")
 rs_plot + rs_plot_2
 
 ```
@@ -441,8 +453,9 @@ emmip(best_mod, region ~ year_f, type = "response", offset = 0) + labs(x = NULL,
 ```
 
 
-## Catch per Hectare Plot
+## Catch per Hectare Plot {.tabset .tabset-pills}
 
+### Seasonal Prediction Differences
 
 ```{r}
 
@@ -457,7 +470,9 @@ best_mod_dat$CV <- best_mod_dat$SE/best_mod_dat$response
 
 #Drop Infinite credibility intervals
 best_mod_dat <- best_mod_dat %>% 
-  mutate(asymp.UCL = ifelse(asymp.UCL == Inf, NA, asymp.UCL))
+  mutate(asymp.UCL = ifelse(asymp.UCL == Inf, NA, asymp.UCL),
+         season = factor(season, levels = c("Summer", "Fall")),
+         region = factor(region, levels = c("Texas", "LA West", "MS Bight")))
 
 
 # Catch Plot
@@ -466,11 +481,10 @@ p <- best_mod_dat %>%
   ggplot(aes(year_n, response)) +
       geom_line(aes(year_n, response, color = season)) +
       geom_point(aes(year_n, response, color = season, shape = season)) +
-      scale_color_grey(start = 0.2, end = 0.6) + 
+      scale_color_grey(start = 0.35, end = 0.7) + 
       labs(
         x = NULL, 
-        y = "Crabs per Hectare",
-        title = "Model Estimates and Yearly observed means") +
+        y = expression(paste("Mean CPUE (crabs ", ha^{-1},")"))) +
       facet_grid(region ~ .) +
   theme(
     legend.position = c(1, .98),
@@ -479,6 +493,75 @@ p <- best_mod_dat %>%
     legend.margin = margin(0, 6, 2, 2),
     legend.background = element_rect(fill = NA),
     legend.title = element_blank())
+p
+
+```
+
+### Observed vs. Predicted Data
+
+```{r}
+#Observed data
+mean_obs <- mean(seamap_west$cpue_towspd)
+obs_timeline <- seamap_west %>% 
+  group_by(survey_year, region, season) %>% 
+  summarise(Nobs = n(),
+            PercentPos = mean(crab_presence),
+            Mean_CPUE = mean(cpue_towspd)) %>% 
+  ungroup() %>% 
+  mutate(season = factor(season, levels = c("Summer", "Fall")),
+         region = factor(region, levels = c("Texas", "LA West", "MS Bight")),
+         Index_Obs = Mean_CPUE/mean_obs)
+
+
+
+#Overall group means
+panel_means <- seamap_west %>% 
+  group_by(region, season) %>% 
+  summarise(Mean_CPUE = mean(cpue_towspd))
+
+
+
+#ggplot of standardized index of abundance
+p <- best_mod_dat %>% 
+  mutate(year_n = as.numeric(as.character(year_f))) %>% 
+  ggplot(aes(year_n, response)) +
+    geom_hline(data = panel_means, 
+               aes(yintercept = Mean_CPUE), alpha = 0.5) +
+    # geom_ribbon(aes(year_n, 
+    #                 ymin = asymp.LCL, 
+    #                 ymax = asymp.UCL), 
+    #             fill = "gray80") +
+    geom_line(aes(x = year_n, 
+                  y = response, 
+                  group = 1, 
+                  col = "Predicted")) +
+    geom_point(aes(x = year_n, 
+                   y = response, 
+                   col = "Predicted")) +
+    # Observed Data
+    geom_line(data = obs_timeline, 
+            aes(x = survey_year, 
+                y = Mean_CPUE, 
+                group = region, 
+                col = "Observed"), linetype = 2) +
+    geom_point(data = obs_timeline, 
+               aes(x = survey_year, 
+                   y = Mean_CPUE, 
+                   group = region, 
+                   col = "Observed")) +
+    #Theme changes
+    #scale_color_grey(start = 0.35, end = 0.7) + 
+    scale_color_manual(values = c("gray35", "royalblue")) + 
+    labs(
+      x = NULL, 
+      y = expression(paste("Mean CPUE (crabs ", ha^{-1},")"))) +
+  theme(legend.position = c(1, .98),
+    legend.justification = c("right", "top"),
+    legend.box.just = "right",
+    legend.margin = margin(0, 6, 2, 2),
+    legend.background = element_rect(fill = NA),
+    legend.title = element_blank()) +
+  facet_grid(season~region)
 p
 
 ```
@@ -641,7 +724,9 @@ ggplot() +
                                title.hjust = 0.5, 
                                title.position = "top",
                                barwidth = 10)) +
-  theme(legend.position = "bottom")
+  theme(legend.position = "bottom", 
+        legend.text = element_text(size  = 12), 
+        legend.title = element_text(size = 12))
 ```
 
 ### Catch per Hectare
@@ -661,7 +746,9 @@ ggplot() +
                                title.hjust = 0.5, 
                                title.position = "top",
                                barwidth = 10)) +
-  theme(legend.position = "bottom")
+  theme(legend.position = "bottom", 
+        legend.text = element_text(size  = 12), 
+        legend.title = element_text(size = 12))
 
 ```
 
@@ -681,7 +768,9 @@ ggplot() +
                                title.hjust = 0.5, 
                                title.position = "top",
                                barwidth = 10)) +
-  theme(legend.position = "bottom")
+  theme(legend.position = "bottom", 
+        legend.text = element_text(size  = 12), 
+        legend.title = element_text(size = 12))
 
 
 
