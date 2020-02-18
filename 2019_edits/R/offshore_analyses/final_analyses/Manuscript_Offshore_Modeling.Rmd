@@ -162,7 +162,7 @@ year_sums %>%
 
 ### Annual Mean Catch
 
-```{r, fig.height=4}
+```{r, fig.height = 4}
 
 west_mean <- round(mean(seamap_west$cpue_towspd, na.rm = T), 3)
 
@@ -186,7 +186,7 @@ year_plot
 
 ### Annual Frequency of Occurrence
 
-```{r, fig.height=4}
+```{r, fig.height = 4}
 west_foa <- round(mean(seamap_west$crab_presence, na.rm = TRUE), 3)
 
 year_foa <- year_sums %>% 
@@ -203,7 +203,7 @@ year_foa
 
 ### Side x Side
 
-```{r, fig.height=4}
+```{r, fig.height = 4}
 
 year_plot + year_foa
 
@@ -328,7 +328,7 @@ rs_foa %>%
 
 ### Mean Catch by Region and Season
 
-```{r west fig, fig.height=4}
+```{r west fig, fig.height = 4, eval = F}
 
 # Plot
 rs_plot <- rs_summary %>% 
@@ -351,7 +351,7 @@ rs_plot <- rs_summary %>%
 rs_plot
 ```
 
-```{r full fig, fig.height=4}
+```{r full fig, fig.height = 4}
 
 # Plot
 rs_plot_3 <- rs_summary_full %>% 
@@ -368,7 +368,8 @@ rs_plot_3 <- rs_summary_full %>%
     legend.position = c(1, .95),
     legend.justification = c("right", "top"),
     legend.box.just = "right",
-    legend.margin = margin(0, 6, 2, 2))
+    legend.margin = margin(0, 6, 2, 2),
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = .8))
 
 
 rs_plot_3
@@ -376,7 +377,7 @@ rs_plot_3
 
 ### Frequency of Occurrence
 
-```{r west foa, fig.height=4}
+```{r west foa, fig.height = 4, eval = F}
 rs_plot_2 <- rs_foa %>% 
   ggplot(aes(region, avg_percent_occurrence, fill = Season)) +
     geom_col(position = "dodge") +
@@ -397,7 +398,7 @@ rs_plot_2 <- rs_foa %>%
 rs_plot_2
 ```
 
-```{r full foa, fig.height=4}
+```{r full foa, fig.height = 4}
 rs_plot_4 <- rs_foa_full %>% 
   ggplot(aes(region, avg_percent_occurrence, fill = Season)) +
     geom_col(position = "dodge") +
@@ -413,17 +414,21 @@ rs_plot_4 <- rs_foa_full %>%
     legend.position = c(1, .95),
     legend.justification = c("right", "top"),
     legend.box.just = "right",
-    legend.margin = margin(0, 6, 2, 2))
+    legend.margin = margin(0, 6, 2, 2),
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = .8))
 
 rs_plot_4
 ```
 
 ### Side x Side
 
-```{r fig.height=4}
+```{r fig.height = 4, eval = FALSE}
 rs_plot <- rs_plot + theme(legend.position = "none")
 rs_plot + rs_plot_2
+```
 
+
+```{r fig.height = 4}
 
 rs_plot_full <- rs_plot_3 + theme(legend.position = "none")
 rs_plot_full + rs_plot_4
