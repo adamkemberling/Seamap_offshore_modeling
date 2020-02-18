@@ -15,6 +15,7 @@ editor_options:
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 
 #packages
+library(ggspatial)
 library(MASS)
 library(here)
 library(tidyverse)
@@ -25,6 +26,7 @@ library(gridExtra)
 library(broom)
 library(statmod)
 library(sf)
+
 conflicted::conflict_prefer("select", "dplyr")
 conflicted::conflict_prefer("filter", "dplyr")
 
@@ -37,7 +39,8 @@ theme_set(theme_bw() +
             axis.text = element_text(size = 12, color = "black"),
             axis.title = element_text(size = 12, color = "black"),
             legend.text = element_text(size = 12, color = "black"),
-            legend.background = element_rect(fill = NA))
+            legend.background = element_rect(fill = NA),
+            strip.text = element_text(size = 12, color = "black"))
           )
 
 `%not in%` <- purrr::negate(`%in%`)
@@ -166,7 +169,7 @@ west_mean <- round(mean(seamap_west$cpue_towspd, na.rm = T), 3)
 year_plot <- year_sums %>% 
   mutate(survey_year = as.numeric(as.character(survey_year))) %>% 
   ggplot() +
-    geom_col(aes(survey_year, `Mean Catch`), fill = "gray35") +
+    geom_col(aes(survey_year, `Mean Catch`), fill = "gray50") +
     geom_errorbar(aes(x = survey_year, 
                       ymin = catch_ymin,
                       ymax = catch_ymax),
@@ -189,7 +192,7 @@ west_foa <- round(mean(seamap_west$crab_presence, na.rm = TRUE), 3)
 year_foa <- year_sums %>% 
   mutate(survey_year = as.numeric(as.character(survey_year))) %>% 
   ggplot() +
-    geom_col(aes(survey_year, `% Occurrence`)) +
+    geom_col(aes(survey_year, `% Occurrence`), fill = "gray50") +
     geom_hline(yintercept = west_foa, 
                linetype = "dashed") +
     scale_y_continuous(labels = scales::percent, limits = c(0,1)) + 
@@ -244,12 +247,56 @@ rs_summary <- seamap_west %>%
 rs_summary %>%
   select(Region = region, Season, Stations, `Missing Obs`, `Mean Catch`, SD, Overdispersed) %>%
   knitr::kable()
+
+
+
+
+
+####  Full Gulf Summaries  ####
+#Mean CPUE for the regions within each season
+rs_summary_full <- seamap %>%
+  filter(is.na(region)      == FALSE) %>%
+  group_by(region, season) %>%
+  summarise(Stations          = n(),
+            `Missing Obs`     = sum(is.na(cpue_towspd)),
+            `Mean Catch`      = mean(cpue_towspd, na.rm = T),
+            `SD`              = sd(cpue_towspd, na.rm = T),
+            `Var`             = var(cpue_towspd),
+            `Overdispersed`   = ifelse(Var > `Mean Catch`, "yes", "no"),
+            `Catch SE`        = sd(cpue_towspd, na.rm = T) / sqrt(Stations - `Missing Obs`)) %>%
+    ungroup() %>%
+    mutate(Season             = factor(season, levels = c("Summer", "Fall")),
+           region             = factor(region,
+                                       levels = c("Texas", "LA West", "MS Bight", "Florida")),
+           #region             = fct_rev(region),
+           catch_ymin         = `Mean Catch` - (2 * `Catch SE`),
+           catch_ymax         = `Mean Catch` + (2 * `Catch SE`),
+           catch_ymin         = ifelse(catch_ymin < 0, 0, catch_ymin)
+    )
+#Calaculate Annual average percent occurrence
+rs_foa_full <- seamap %>% 
+  group_by(survey_year, region, season) %>% 
+  summarise(percent_occurrence = mean(crab_presence, na.rm = T)) %>% 
+  group_by(region, season) %>% 
+  summarise(nyears = n(),
+            avg_percent_occurrence = mean(percent_occurrence, na.rm = T),
+            po_se = sd(percent_occurrence, na.rm = T) / sqrt(nyears)) %>% 
+    ungroup() %>%
+    mutate(Season             = factor(season, levels = c("Summer", "Fall")),
+           region             = factor(region, levels = c("Texas", "LA West", 
+                                                          "MS Bight", "Florida")),
+           occurrence_ymin    = avg_percent_occurrence - (2 * po_se),
+           occurrence_ymax    = avg_percent_occurrence + (2 * po_se),
+           occurrence_ymin    = ifelse(occurrence_ymin < 0, 0, occurrence_ymin),
+           occurrence_ymax    = ifelse(occurrence_ymax > 1, 1, occurrence_ymax)
+    )
+
 ```
 
 
 Average frequency of occurrence for each region and season is calculated in two steps. In the first step the frequency of occurrence for each region and for both survey seasons is calculated for every year. In the second step those annual means are averaged to get an overall measure for each region for each season, and a measure of error around them is calculated to represent the inter-annual variation in the frequency of occurrence.
 
-```{r}
+```{r west summs}
 
 
 
@@ -281,7 +328,7 @@ rs_foa %>%
 
 ### Mean Catch by Region and Season
 
-```{r, fig.height=4}
+```{r west fig, fig.height=4}
 
 # Plot
 rs_plot <- rs_summary %>% 
@@ -304,9 +351,32 @@ rs_plot <- rs_summary %>%
 rs_plot
 ```
 
+```{r full fig, fig.height=4}
+
+# Plot
+rs_plot_3 <- rs_summary_full %>% 
+  ggplot(aes(region, `Mean Catch`, fill = Season)) +
+    geom_col(position = "dodge") +
+    geom_errorbar(aes(ymin = catch_ymin,
+                      ymax = catch_ymax),
+                  position = "dodge", 
+                  size = .25) +
+  scale_fill_manual(name = "", values = setNames(c("gray35", "gray70"), c("Summer", "Fall"))) +
+  labs(x = NULL,
+       y = expression(paste("Mean CPUE (crabs ", ha^{-1},")"))) + 
+  theme(
+    legend.position = c(1, .95),
+    legend.justification = c("right", "top"),
+    legend.box.just = "right",
+    legend.margin = margin(0, 6, 2, 2))
+
+
+rs_plot_3
+```
+
 ### Frequency of Occurrence
 
-```{r, fig.height=4}
+```{r west foa, fig.height=4}
 rs_plot_2 <- rs_foa %>% 
   ggplot(aes(region, avg_percent_occurrence, fill = Season)) +
     geom_col(position = "dodge") +
@@ -327,12 +397,36 @@ rs_plot_2 <- rs_foa %>%
 rs_plot_2
 ```
 
+```{r full foa, fig.height=4}
+rs_plot_4 <- rs_foa_full %>% 
+  ggplot(aes(region, avg_percent_occurrence, fill = Season)) +
+    geom_col(position = "dodge") +
+    geom_errorbar(aes(ymin = occurrence_ymin,
+                      ymax = occurrence_ymax),
+                  position = "dodge",
+                  size = .25) +
+  scale_fill_manual(name = "", values = setNames(c("gray35", "gray70"), c("Summer", "Fall"))) +
+  scale_y_continuous(labels = scales::percent, limits = c(0,1)) + 
+  labs(x = NULL,
+       y = "Percent occurrence") + 
+  theme(
+    legend.position = c(1, .95),
+    legend.justification = c("right", "top"),
+    legend.box.just = "right",
+    legend.margin = margin(0, 6, 2, 2))
+
+rs_plot_4
+```
+
 ### Side x Side
 
 ```{r fig.height=4}
 rs_plot <- rs_plot + theme(legend.position = "none")
 rs_plot + rs_plot_2
 
+
+rs_plot_full <- rs_plot_3 + theme(legend.position = "none")
+rs_plot_full + rs_plot_4
 ```
 
 
@@ -517,7 +611,10 @@ obs_timeline <- seamap_west %>%
 #Overall group means
 panel_means <- seamap_west %>% 
   group_by(region, season) %>% 
-  summarise(Mean_CPUE = mean(cpue_towspd))
+  summarise(Mean_CPUE = mean(cpue_towspd)) %>% 
+  ungroup() %>% 
+  mutate(season = factor(season, levels = c("Summer", "Fall")),
+         region = factor(region, levels = c("Texas", "LA West", "MS Bight")))
 
 
 
@@ -525,12 +622,10 @@ panel_means <- seamap_west %>%
 p <- best_mod_dat %>% 
   mutate(year_n = as.numeric(as.character(year_f))) %>% 
   ggplot(aes(year_n, response)) +
-    geom_hline(data = panel_means, 
-               aes(yintercept = Mean_CPUE), alpha = 0.5) +
-    # geom_ribbon(aes(year_n, 
-    #                 ymin = asymp.LCL, 
-    #                 ymax = asymp.UCL), 
-    #             fill = "gray80") +
+    geom_ribbon(aes(year_n,
+                    ymin = asymp.LCL,
+                    ymax = asymp.UCL),
+                fill = "gray80") +
     geom_line(aes(x = year_n, 
                   y = response, 
                   group = 1, 
@@ -549,9 +644,12 @@ p <- best_mod_dat %>%
                    y = Mean_CPUE, 
                    group = region, 
                    col = "Observed")) +
+    #Group Means
+    # geom_hline(data = panel_means, 
+    #            aes(yintercept = Mean_CPUE), alpha = 0.5, linetype = 1, color = "darkred") +
     #Theme changes
     #scale_color_grey(start = 0.35, end = 0.7) + 
-    scale_color_manual(values = c("gray35", "royalblue")) + 
+    scale_color_manual(values = c("royalblue", "black")) + 
     labs(
       x = NULL, 
       y = expression(paste("Mean CPUE (crabs ", ha^{-1},")"))) +
@@ -702,7 +800,16 @@ ggplot() +
   geom_text(data = sz_df, aes(long, lat, label = SZ), size = 3.5) +
   coord_sf(xlim = c(-98, -81), ylim = c(24, 31)) +
   labs(x = NULL, y = NULL)  +
-  scale_y_continuous(breaks = c(25,30))
+  scale_y_continuous(breaks = c(25,30)) +
+  annotation_north_arrow(
+    height = unit(0.4, "in"),
+    location = "bl", 
+    which_north = "true", 
+    pad_x = unit(0, "in"), 
+    pad_y = unit(0, "in"),
+    style = north_arrow_fancy_orienteering) +
+  annotation_scale(
+    pad_x = unit(0.5, "in"))
 ```
 
 
@@ -726,7 +833,16 @@ ggplot() +
                                barwidth = 10)) +
   theme(legend.position = "bottom", 
         legend.text = element_text(size  = 12), 
-        legend.title = element_text(size = 12))
+        legend.title = element_text(size = 12)) +
+  annotation_north_arrow(
+    height = unit(0.4, "in"),
+    location = "bl", 
+    which_north = "true", 
+    pad_x = unit(0, "in"), 
+    pad_y = unit(0, "in"),
+    style = north_arrow_fancy_orienteering) +
+  annotation_scale(
+    pad_x = unit(0.5, "in"))
 ```
 
 ### Catch per Hectare
@@ -748,7 +864,16 @@ ggplot() +
                                barwidth = 10)) +
   theme(legend.position = "bottom", 
         legend.text = element_text(size  = 12), 
-        legend.title = element_text(size = 12))
+        legend.title = element_text(size = 12)) +
+  annotation_north_arrow(
+    height = unit(0.4, "in"),
+    location = "bl", 
+    which_north = "true", 
+    pad_x = unit(0, "in"), 
+    pad_y = unit(0, "in"),
+    style = north_arrow_fancy_orienteering) +
+  annotation_scale(
+    pad_x = unit(0.5, "in"))
 
 ```
 
@@ -770,14 +895,16 @@ ggplot() +
                                barwidth = 10)) +
   theme(legend.position = "bottom", 
         legend.text = element_text(size  = 12), 
-        legend.title = element_text(size = 12))
-
-
-
-
-
-
-
+        legend.title = element_text(size = 12)) +
+  annotation_north_arrow(
+    height = unit(0.4, "in"),
+    location = "bl", 
+    which_north = "true", 
+    pad_x = unit(0, "in"), 
+    pad_y = unit(0, "in"),
+    style = north_arrow_fancy_orienteering) +
+  annotation_scale(
+    pad_x = unit(0.5, "in"))
 
 ```
 
