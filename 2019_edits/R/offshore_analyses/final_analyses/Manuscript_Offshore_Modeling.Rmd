@@ -48,12 +48,15 @@ theme_set(theme_bw() +
 
 # Manuscript Model
 
+**NOTE: Statzone 10 donated to Florida**
+
 ```{r load data}
 seamap <- read_csv(str_c("~/Dropbox/SEAMAP_2019/data/offshore/", 
                         "seamap_manuscriptmods_full.csv"), 
                    col_types = cols()) %>% 
   mutate(year_f = factor(year_f),
          Season = factor(season, levels = c("Summer", "Fall")),
+         region = ifelse(statzone == 10, "Florida", region),
          region = ifelse(region == "Louisiana", "LA West", region),
          region = factor(region, levels = c("Texas", "LA West", "MS Bight", "Florida"))
 )
@@ -63,6 +66,7 @@ seamap_west <- read_csv(str_c("~/Dropbox/SEAMAP_2019/data/offshore/",
                         col_types = cols()) %>% 
   mutate(year_f = factor(year_f),
          Season = factor(season, levels = c("Summer", "Fall")),
+         region = ifelse(statzone == 10, "Florida", region),
          region = ifelse(region == "Louisiana", "LA West", region),
          region = factor(region, levels = c("Texas", "LA West", "MS Bight", "Florida"))
 )
@@ -74,13 +78,14 @@ seamap_west <- read_csv(str_c("~/Dropbox/SEAMAP_2019/data/offshore/",
 ### Model Data - West Only
 
 ```{r seamap west stats}
-start_year <- min(as.numeric(as.character(seamap_west$survey_year)))
-end_year <- max(as.numeric(as.character(seamap_west$survey_year)))
-total_catch <- sum(seamap_west$sapidus_catch, na.rm = T)
-overall_foa <- round(mean(seamap_west$crab_presence, na.rm = TRUE), 3) * 100
-overall_mean <- round(mean(seamap_west$cpue_towspd, na.rm = T), 3)
+start_year    <- min(as.numeric(as.character(seamap_west$survey_year)))
+end_year      <- max(as.numeric(as.character(seamap_west$survey_year)))
+total_catch   <- sum(seamap_west$sapidus_catch, na.rm = T)
+overall_foa   <- round(mean(seamap_west$crab_presence, na.rm = TRUE), 3) * 100
 percent_zeros <- seamap_west %>% filter(sapidus_catch == 0) %>% count()
 station_count <- seamap_west %>% count()
+overall_mean  <- round(mean(seamap_west$cpue_towspd, na.rm = T), 3)
+overall_se    <- round(sd(seamap_west$cpue_towspd, na.rm = T) / sqrt(station_count), 3)
 
 ```
    
@@ -94,19 +99,22 @@ station_count <- seamap_west %>% count()
 
  * Overall Mean Catch Crabs/Hectare: `r overall_mean`   
  
+ * Overall Standard Error `r overall_se`    
+ 
  * Stations with no catch: `r percent_zeros` / `r station_count` Stations **or** `r round((percent_zeros / station_count) * 100, 2)`%    
  
 
 ### East + West
 
 ```{r seamap all stats}
-start_year <- min(as.numeric(as.character(seamap$survey_year)))
-end_year <- max(as.numeric(as.character(seamap$survey_year)))
-total_catch <- sum(seamap$sapidus_catch, na.rm = T)
-overall_foa <- round(mean(seamap$crab_presence, na.rm = TRUE), 3) * 100
-overall_mean <- round(mean(seamap$cpue_towspd, na.rm = T), 3)
+start_year    <- min(as.numeric(as.character(seamap$survey_year)))
+end_year      <- max(as.numeric(as.character(seamap$survey_year)))
+total_catch   <- sum(seamap$sapidus_catch, na.rm = T)
+overall_foa   <- round(mean(seamap$crab_presence, na.rm = TRUE), 3) * 100
+overall_mean  <- round(mean(seamap$cpue_towspd, na.rm = T), 3)
 percent_zeros <- seamap %>% filter(sapidus_catch == 0) %>% count()
 station_count <- seamap %>% count()
+overall_se    <- round(sd(seamap$cpue_towspd, na.rm = T) / sqrt(station_count), 3)
 
 ```
 
@@ -119,7 +127,9 @@ station_count <- seamap %>% count()
  
  * Overall Frequency of Occurrence was `r overall_foa`  
 
- * Overall Mean Catch Crabs/Hectare: `r overall_mean`   
+ * Overall Mean Catch Crabs/Hectare: `r overall_mean`      
+ 
+ * Overall Standard Error `r overall_se`    
  
  * Stations with no catch: `r percent_zeros` / `r station_count` Stations **or** `r round((percent_zeros / station_count) * 100, 2)`% 
 
