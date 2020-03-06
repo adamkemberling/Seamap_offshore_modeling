@@ -215,8 +215,14 @@ year_foa
 
 ```{r, fig.height = 4}
 
-year_plot + year_foa
+figure_4 <- year_plot + year_foa
 
+figure_4
+
+ggsave(figure_4, 
+       filename = here::here("2019_edits/R/offshore_analyses/final_analyses/manuscript_figs", "Figure4.tiff"), 
+       height = 4, 
+       device = "tiff")
 ```
 
 
@@ -441,7 +447,14 @@ rs_plot + rs_plot_2
 ```{r fig.height = 4}
 
 rs_plot_full <- rs_plot_3 + theme(legend.position = "none")
-rs_plot_full + rs_plot_4
+figure_3 <- rs_plot_full + rs_plot_4
+
+figure_3
+
+ggsave(figure_3, 
+       filename = here::here("2019_edits/R/offshore_analyses/final_analyses/manuscript_figs", "Figure3.tiff"), 
+       height = 4, 
+       device = "tiff")
 ```
 
 
@@ -677,6 +690,13 @@ p <- best_mod_dat %>%
   facet_grid(season~region)
 p
 
+
+
+#Savie it
+ggsave(p, 
+       filename = here::here("2019_edits/R/offshore_analyses/final_analyses/manuscript_figs", "Figure5.tiff"), 
+       device = "tiff")
+
 ```
 
 
@@ -808,7 +828,7 @@ sz_df <- tribble(
 
 ) %>% mutate(SZ = as.character(SZ))
 
-ggplot() +
+sz_plot <- ggplot() +
   geom_sf(data = szones, fill = NA) +
   geom_sf(data = usmap) +
   geom_sf(data = mex) +
@@ -825,6 +845,16 @@ ggplot() +
     style = north_arrow_fancy_orienteering) +
   annotation_scale(
     pad_x = unit(0.5, "in"))
+
+sz_plot
+
+
+
+# Export
+ggsave(sz_plot, 
+       filename = here::here("2019_edits/R/offshore_analyses/final_analyses/manuscript_figs", "Figure1.tiff"), 
+       height = 4, 
+       device = "tiff")
 ```
 
 
